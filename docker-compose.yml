@@ -1,0 +1,7 @@
+# 一键启动所有服务
+# 使用方法: docker compose up -d
+
+include:
+  - cdnjs/docker-compose.yml
+  - git/docker-compose.yml
+  - torcherino/docker-compose.yml
