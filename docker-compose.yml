@@ -1,7 +1,12 @@
 # 一键启动所有服务
-# 使用方法: docker compose up -d
+# 使用方法: 
+#   1. 复制 .env.example 为 .env 并配置
+#   2. docker compose up -d
 
 include:
-  - cdnjs/docker-compose.yml
-  - git/docker-compose.yml
-  - torcherino/docker-compose.yml
+  - path: cdnjs/docker-compose.yml
+    env_file: cdnjs/.env
+  - path: git/docker-compose.yml
+    env_file: git/.env
+  - path: torcherino/docker-compose.yml
+    env_file: torcherino/.env
