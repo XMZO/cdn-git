@@ -1,7 +1,7 @@
 services:
   proxy:
     build: .
-    container_name: cdn-proxy
+    container_name: torcherino
     restart: unless-stopped
     ports:
       - "3000:3000"

@@ -7,7 +7,7 @@
 ```
 ├── cdnjs/        # jsDelivr CDN 缓存代理 (Redis)
 ├── git/          # GitHub raw 文件代理
-└── imgbed/       # 图床反向代理 (Pages/HF Space)
+└── torcherino/   # 通用反向代理 (支持 Pages/HF Space 等)
 ```
 
 ## 快速部署
@@ -21,8 +21,8 @@ cd cdnjs && docker compose up -d
 # 部署 GitHub raw 代理
 cd git && docker compose up -d
 
-# 部署图床反代
-cd imgbed && docker compose up -d
+# 部署通用反代
+cd torcherino && docker compose up -d
 ```
 
 ## 服务说明
@@ -41,12 +41,12 @@ cd imgbed && docker compose up -d
 - **端口**: 3002
 - **特性**: Token 认证、私有仓库访问、域名重写
 
-### imgbed - 图床反代
+### torcherino - 通用反向代理
 
-反向代理 Cloudflare Pages 或 Hugging Face Space 图床。
+通用反向代理服务，可代理 Cloudflare Pages、Hugging Face Space 等任意后端。
 
 - **端口**: 3000
-- **特性**: 域名重写、JSON 响应处理、验证头
+- **特性**: 多域名映射、域名重写、JSON 响应处理、验证头
 
 ## License
 
