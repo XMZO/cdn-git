@@ -20,3 +20,4 @@ Thumbs.db
 # 忽略构建产物
 **/dist/
 **/build/
+torcherino/worker.js
