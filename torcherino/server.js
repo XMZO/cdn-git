@@ -28,8 +28,14 @@ function isStaticPath(pathname) {
 }
 
 function rewriteBody(body, reqOrigin) {
+    // 替换 pages.dev 域名
     const pagesDevPattern = /https?:\/\/[^/"'\s]*\.pages\.dev/gi;
-    return body.replace(pagesDevPattern, reqOrigin);
+    // 替换 hf.space 域名
+    const hfSpacePattern = /https?:\/\/[^/"'\s]*\.hf\.space/gi;
+
+    return body
+        .replace(pagesDevPattern, reqOrigin)
+        .replace(hfSpacePattern, reqOrigin);
 }
 
 // ===== 代理请求 =====
@@ -76,6 +82,23 @@ async function proxyRequest(req, res) {
 
             // 处理 JSON 响应 - 重写域名
             if (contentType.includes('application/json')) {
+                let body = '';
+                proxyRes.on('data', chunk => body += chunk);
+                proxyRes.on('end', () => {
+                    const rewritten = rewriteBody(body, reqOrigin);
+                    const newHeaders = { ...proxyRes.headers };
+                    delete newHeaders['content-length'];
+                    delete newHeaders['transfer-encoding'];
+                    newHeaders['content-length'] = Buffer.byteLength(rewritten);
+                    res.writeHead(proxyRes.statusCode, newHeaders);
+                    res.end(rewritten);
+                    resolve();
+                });
+                return;
+            }
+
+            // 处理 HTML 响应 - 重写域名（用于登录页面等）
+            if (contentType.includes('text/html')) {
                 let body = '';
                 proxyRes.on('data', chunk => body += chunk);
                 proxyRes.on('end', () => {
