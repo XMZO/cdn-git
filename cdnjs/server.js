@@ -6,9 +6,12 @@ const compression = require('compression');
 const app = express();
 app.use(compression());
 
-const ASSET_URL = 'https://cdn.jsdelivr.net';
-const ALLOWED_GH_USERS = ['XMZO', 'starsei'];
-const DEFAULT_GH_USER = 'XMZO';
+const ASSET_URL = process.env.ASSET_URL || 'https://cdn.jsdelivr.net';
+// ALLOWED_GH_USERS: 逗号分隔的用户列表，如 "XMZO,starsei"
+const ALLOWED_GH_USERS = process.env.ALLOWED_GH_USERS
+  ? process.env.ALLOWED_GH_USERS.split(',').map(u => u.trim())
+  : [];
+const DEFAULT_GH_USER = process.env.DEFAULT_GH_USER || '';
 
 // 连接 Redis
 const redis = new Redis({

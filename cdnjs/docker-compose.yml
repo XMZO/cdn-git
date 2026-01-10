@@ -18,10 +18,8 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3000"
-    environment:
-      - PORT=3000
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+    env_file:
+      - .env
     depends_on:
       redis:
         condition: service_healthy
