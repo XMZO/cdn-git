@@ -3,13 +3,13 @@ import https from 'https';
 
 // ===== 配置 =====
 const PORT = process.env.PORT || 3000;
-const DEFAULT_TARGET = process.env.DEFAULT_TARGET || 'xxxxxxxxxxxxxxxxx.hf.space';
+const DEFAULT_TARGET = process.env.DEFAULT_TARGET || '';
 const WORKER_SECRET_KEY = process.env.WORKER_SECRET_KEY || '';
 
-const HOST_MAPPING = {
-    'umi.li': 'cloudflare-imgbed-buu.pages.dev',
-    // 添加更多映射...
-};
+// HOST_MAPPING: JSON 格式，如 {"umi.li":"cloudflare-imgbed-buu.pages.dev"}
+const HOST_MAPPING = process.env.HOST_MAPPING
+    ? JSON.parse(process.env.HOST_MAPPING)
+    : {};
 
 const STATIC_EXTS = new Set([
     'png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'svg', 'ico', 'bmp', 'heic', 'heif',
