@@ -51,6 +51,8 @@ async function proxyRequest(req, res) {
     headers.host = targetHost;
     delete headers['connection'];
     delete headers['keep-alive'];
+    // 禁用压缩，避免处理 gzip 响应
+    delete headers['accept-encoding'];
 
     // 添加验证头
     if (WORKER_SECRET_KEY) {
