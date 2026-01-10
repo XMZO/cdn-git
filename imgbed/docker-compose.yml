@@ -1,0 +1,11 @@
+services:
+  proxy:
+    build: .
+    container_name: cdn-proxy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DEFAULT_TARGET=xxxxxxxxxxxxxxxxx.hf.space
+      - WORKER_SECRET_KEY=your_secret_key_here  # 与后端配置的密钥一致

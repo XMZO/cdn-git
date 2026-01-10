@@ -1,0 +1,12 @@
+services:
+  git:
+    build: .
+    container_name: cdn-git
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
