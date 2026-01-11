@@ -2,10 +2,10 @@
 **/node_modules/
 
 # 忽略环境变量文件（包含敏感信息）
-**/.env
+.env
 
 # 忽略日志
-**/*.log
+*.log
 
 # 忽略 IDE 文件
 .idea/
@@ -18,9 +18,9 @@
 Thumbs.db
 
 # 忽略构建产物
-**/dist/
-**/build/
-torcherino/worker.js.bak
+dist/
+build/
 
 # 忽略本地数据
 data/
+
