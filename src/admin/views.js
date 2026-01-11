@@ -21,7 +21,7 @@ function renderLayout({ title, user, content, notice, error }) {
       <div class="app">
         <aside class="sidebar">
           <div class="brand">
-            <div class="brand-title">Akari</div>
+            <div class="brand-title">Hazuki</div>
             <div class="brand-sub">Proxy Suite</div>
           </div>
 
@@ -86,7 +86,7 @@ function renderLayout({ title, user, content, notice, error }) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(title)} - Akari</title>
+  <title>${escapeHtml(title)} - Hazuki</title>
   <style>
     :root {
       color-scheme: light dark;
