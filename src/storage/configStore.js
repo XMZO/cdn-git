@@ -5,7 +5,11 @@ const { EventEmitter } = require("node:events");
 const { AppConfigSchema } = require("./schema");
 
 const CONFIG_ROW_ID = 1;
-const SECRET_PATHS = ["git.githubToken", "torcherino.workerSecretKey"];
+const SECRET_PATHS = [
+  "git.githubToken",
+  "torcherino.workerSecretKey",
+  "torcherino.workerSecretHeaderMap",
+];
 
 function nowIso() {
   return new Date().toISOString();
@@ -44,10 +48,24 @@ function encryptConfigSecrets({ config, cryptoContext }) {
   const out = cloneJson(config);
   for (const path of SECRET_PATHS) {
     const value = getNested(out, path);
-    if (typeof value !== "string") continue;
-    if (!value) continue;
-    if (value.startsWith("enc:v1:")) continue;
-    setNested(out, path, cryptoContext.encryptString(value));
+    if (typeof value === "string") {
+      if (!value) continue;
+      if (value.startsWith("enc:v1:")) continue;
+      setNested(out, path, cryptoContext.encryptString(value));
+      continue;
+    }
+    if (isPlainObject(value)) {
+      const encrypted = {};
+      for (const [k, v] of Object.entries(value)) {
+        const raw = (v ?? "").toString();
+        if (!raw) {
+          encrypted[k] = "";
+          continue;
+        }
+        encrypted[k] = raw.startsWith("enc:v1:") ? raw : cryptoContext.encryptString(raw);
+      }
+      setNested(out, path, encrypted);
+    }
   }
   return out;
 }
@@ -56,9 +74,19 @@ function decryptConfigSecrets({ config, cryptoContext }) {
   const out = cloneJson(config);
   for (const path of SECRET_PATHS) {
     const value = getNested(out, path);
-    if (typeof value !== "string") continue;
-    if (!value) continue;
-    setNested(out, path, cryptoContext.decryptString(value));
+    if (typeof value === "string") {
+      if (!value) continue;
+      setNested(out, path, cryptoContext.decryptString(value));
+      continue;
+    }
+    if (isPlainObject(value)) {
+      const decrypted = {};
+      for (const [k, v] of Object.entries(value)) {
+        const raw = (v ?? "").toString();
+        decrypted[k] = raw ? cryptoContext.decryptString(raw) : "";
+      }
+      setNested(out, path, decrypted);
+    }
   }
   return out;
 }
@@ -164,6 +192,12 @@ class ConfigStore extends EventEmitter {
         defaultTarget: (env.DEFAULT_TARGET || "").toString(),
         hostMapping: parseJsonObject(env.HOST_MAPPING, {}),
         workerSecretKey: (env.WORKER_SECRET_KEY || "").toString(),
+        workerSecretHeaders: (env.WORKER_SECRET_HEADERS || "")
+          .toString()
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        workerSecretHeaderMap: parseJsonObject(env.WORKER_SECRET_HEADER_MAP, {}),
       },
     });
 
@@ -203,6 +237,9 @@ class ConfigStore extends EventEmitter {
     const config = this.getDecryptedConfig();
     config.git.githubToken = config.git.githubToken ? "__SET__" : "";
     config.torcherino.workerSecretKey = config.torcherino.workerSecretKey ? "__SET__" : "";
+    config.torcherino.workerSecretHeaderMap = Object.fromEntries(
+      Object.entries(config.torcherino.workerSecretHeaderMap || {}).map(([k, v]) => [k, v ? "__SET__" : ""])
+    );
     return config;
   }
 
@@ -264,8 +301,16 @@ class ConfigStore extends EventEmitter {
       // Keep secrets if updater clears them (common in forms).
       for (const path of SECRET_PATHS) {
         const nextValue = getNested(nextPlain, path);
-        if (typeof nextValue === "string" && nextValue === "" && !clearSet.has(path)) {
+        if (clearSet.has(path)) continue;
+        if (typeof nextValue === "string" && nextValue === "") {
           setNested(nextPlain, path, getNested(current, path) || "");
+          continue;
+        }
+        if (isPlainObject(nextValue) && Object.keys(nextValue).length === 0) {
+          const currentValue = getNested(current, path);
+          if (isPlainObject(currentValue)) {
+            setNested(nextPlain, path, currentValue);
+          }
         }
       }
     }

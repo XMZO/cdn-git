@@ -202,7 +202,10 @@ function startAdminServer({ db, configStore }) {
       const torcherinoDefaultTarget = (req.body.torcherinoDefaultTarget || "").toString().trim();
       const torcherinoHostMapping = parseJsonObject(req.body.torcherinoHostMappingJson);
       const torcherinoWorkerSecretKey = (req.body.torcherinoWorkerSecretKey || "").toString();
+      const torcherinoWorkerSecretHeaders = parseHeaderNamesCsv(req.body.torcherinoWorkerSecretHeaders);
+      const torcherinoWorkerSecretHeaderMap = parseJsonObject(req.body.torcherinoWorkerSecretHeaderMapJson);
       const torcherinoClearWorkerSecretKey = parseBoolean(req.body.torcherinoClearWorkerSecretKey, false);
+      const torcherinoClearWorkerSecretHeaderMap = parseBoolean(req.body.torcherinoClearWorkerSecretHeaderMap, false);
 
       const cdnjsDefaultGhUser = (req.body.cdnjsDefaultGhUser || "").toString().trim();
       const cdnjsAllowedGhUsers = parseCsv(req.body.cdnjsAllowedGhUsers);
@@ -250,8 +253,15 @@ function startAdminServer({ db, configStore }) {
         clearSecrets: [
           ...(gitClearGithubToken ? ["git.githubToken"] : []),
           ...(torcherinoClearWorkerSecretKey ? ["torcherino.workerSecretKey"] : []),
+          ...(torcherinoClearWorkerSecretHeaderMap ? ["torcherino.workerSecretHeaderMap"] : []),
         ],
         updater: (cfg) => {
+          const workerSecretHeaderMap = torcherinoClearWorkerSecretHeaderMap
+            ? {}
+            : mergeSecretHeaderMap({
+                input: torcherinoWorkerSecretHeaderMap,
+                current: cfg.torcherino.workerSecretHeaderMap,
+              });
           return {
             ...cfg,
             torcherino: {
@@ -259,6 +269,8 @@ function startAdminServer({ db, configStore }) {
               defaultTarget: torcherinoDefaultTarget,
               hostMapping: torcherinoHostMapping,
               workerSecretKey: torcherinoClearWorkerSecretKey ? "" : torcherinoWorkerSecretKey || "",
+              workerSecretHeaders: torcherinoWorkerSecretHeaders,
+              workerSecretHeaderMap,
             },
             cdnjs: {
               ...cfg.cdnjs,
@@ -445,13 +457,25 @@ function startAdminServer({ db, configStore }) {
       const defaultTarget = (req.body.defaultTarget || "").toString().trim();
       const hostMapping = parseJsonObject(req.body.hostMapping);
       const workerSecretKey = (req.body.workerSecretKey || "").toString();
+      const workerSecretHeaders = parseHeaderNamesCsv(req.body.workerSecretHeaders);
+      const workerSecretHeaderMap = parseJsonObject(req.body.workerSecretHeaderMapJson);
       const clearWorkerSecretKey = parseBoolean(req.body.clearWorkerSecretKey, false);
+      const clearWorkerSecretHeaderMap = parseBoolean(req.body.clearWorkerSecretHeaderMap, false);
 
       configStore.updateConfig({
         userId: req.user.id,
         note: "edit:torcherino",
-        clearSecrets: clearWorkerSecretKey ? ["torcherino.workerSecretKey"] : [],
+        clearSecrets: [
+          ...(clearWorkerSecretKey ? ["torcherino.workerSecretKey"] : []),
+          ...(clearWorkerSecretHeaderMap ? ["torcherino.workerSecretHeaderMap"] : []),
+        ],
         updater: (cfg) => {
+          const nextWorkerSecretHeaderMap = clearWorkerSecretHeaderMap
+            ? {}
+            : mergeSecretHeaderMap({
+                input: workerSecretHeaderMap,
+                current: cfg.torcherino.workerSecretHeaderMap,
+              });
           return {
             ...cfg,
             torcherino: {
@@ -459,6 +483,8 @@ function startAdminServer({ db, configStore }) {
               defaultTarget,
               hostMapping,
               workerSecretKey: clearWorkerSecretKey ? "" : workerSecretKey || "",
+              workerSecretHeaders,
+              workerSecretHeaderMap: nextWorkerSecretHeaderMap,
             },
           };
         },
@@ -566,9 +592,14 @@ function startAdminServer({ db, configStore }) {
 }
 
 function buildWizardFormFromConfig(config) {
+  const torcherinoWorkerSecretHeaderMapRedacted = Object.fromEntries(
+    Object.entries(config.torcherino.workerSecretHeaderMap || {}).map(([k, v]) => [k, v ? "__SET__" : ""])
+  );
   return {
     torcherinoDefaultTarget: (config.torcherino.defaultTarget || "").toString(),
     torcherinoHostMappingJson: JSON.stringify(config.torcherino.hostMapping || {}, null, 2),
+    torcherinoWorkerSecretHeaders: (config.torcherino.workerSecretHeaders || []).join(", "),
+    torcherinoWorkerSecretHeaderMapJson: JSON.stringify(torcherinoWorkerSecretHeaderMapRedacted, null, 2),
     cdnjsDefaultGhUser: (config.cdnjs.defaultGhUser || "").toString(),
     cdnjsAllowedGhUsers: (config.cdnjs.allowedGhUsers || []).join(", "),
     cdnjsAssetUrl: (config.cdnjs.assetUrl || "").toString(),
@@ -585,11 +616,24 @@ function buildWizardFormFromBody(body, currentConfig) {
   };
 
   const torcherinoHostMappingJsonDefault = JSON.stringify(currentConfig.torcherino.hostMapping || {}, null, 2);
+  const torcherinoWorkerSecretHeadersDefault = (currentConfig.torcherino.workerSecretHeaders || []).join(", ");
+  const torcherinoWorkerSecretHeaderMapJsonDefault = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(currentConfig.torcherino.workerSecretHeaderMap || {}).map(([k, v]) => [k, v ? "__SET__" : ""])
+    ),
+    null,
+    2
+  );
   const cdnjsAllowedGhUsersDefault = (currentConfig.cdnjs.allowedGhUsers || []).join(", ");
 
   return {
     torcherinoDefaultTarget: take(body.torcherinoDefaultTarget, "").trim(),
     torcherinoHostMappingJson: take(body.torcherinoHostMappingJson, torcherinoHostMappingJsonDefault),
+    torcherinoWorkerSecretHeaders: take(body.torcherinoWorkerSecretHeaders, torcherinoWorkerSecretHeadersDefault).trim(),
+    torcherinoWorkerSecretHeaderMapJson: take(
+      body.torcherinoWorkerSecretHeaderMapJson,
+      torcherinoWorkerSecretHeaderMapJsonDefault
+    ),
     cdnjsDefaultGhUser: take(body.cdnjsDefaultGhUser, "").trim(),
     cdnjsAllowedGhUsers: take(body.cdnjsAllowedGhUsers, cdnjsAllowedGhUsersDefault).trim(),
     cdnjsAssetUrl: take(body.cdnjsAssetUrl, currentConfig.cdnjs.assetUrl).trim() || currentConfig.cdnjs.assetUrl,
@@ -627,6 +671,61 @@ function parseCsv(value) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function normalizeHeaderName(value) {
+  return (value || "").toString().trim().toLowerCase();
+}
+
+function isValidHeaderName(name) {
+  return /^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name);
+}
+
+function parseHeaderNamesCsv(value) {
+  const names = parseCsv(value)
+    .map(normalizeHeaderName)
+    .filter(Boolean);
+
+  for (const name of names) {
+    if (!isValidHeaderName(name)) {
+      throw new Error("WORKER_SECRET_HEADERS：Header 名称不合法");
+    }
+  }
+
+  return Array.from(new Set(names));
+}
+
+function mergeSecretHeaderMap({ input, current }) {
+  const currentMap =
+    current && typeof current === "object" && !Array.isArray(current) ? current : {};
+
+  const out = {};
+  const inputMap =
+    input && typeof input === "object" && !Array.isArray(input) ? input : {};
+
+  for (const [rawName, rawValue] of Object.entries(inputMap)) {
+    const headerName = normalizeHeaderName(rawName);
+    if (!headerName) continue;
+    if (!isValidHeaderName(headerName)) {
+      throw new Error("WORKER_SECRET_HEADER_MAP：Header 名称不合法");
+    }
+
+    let value = "";
+    if (rawValue === "__SET__") {
+      value = (currentMap[headerName] || "").toString();
+    } else if (rawValue === undefined || rawValue === null || rawValue === "") {
+      value = "";
+    } else if (typeof rawValue !== "string") {
+      throw new Error("WORKER_SECRET_HEADER_MAP：value 必须是字符串");
+    } else {
+      value = rawValue;
+    }
+
+    if (!value) continue;
+    out[headerName] = value;
+  }
+
+  return out;
 }
 
 function parseBoolean(value, fallback) {

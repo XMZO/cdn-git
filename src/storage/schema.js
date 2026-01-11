@@ -55,6 +55,8 @@ const TorcherinoSchema = z.object({
   defaultTarget: z.string().default(""),
   hostMapping: z.record(z.string()).default({}),
   workerSecretKey: z.string().default(""),
+  workerSecretHeaders: z.array(z.string().min(1)).default([]),
+  workerSecretHeaderMap: z.record(z.string()).default({}),
 });
 
 const AppConfigSchema = z.object({

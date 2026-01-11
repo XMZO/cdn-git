@@ -5,6 +5,20 @@ import https from 'https';
 const PORT = process.env.PORT || 3000;
 const DEFAULT_TARGET = process.env.DEFAULT_TARGET || '';
 const WORKER_SECRET_KEY = process.env.WORKER_SECRET_KEY || '';
+const WORKER_SECRET_HEADERS = process.env.WORKER_SECRET_HEADERS || '';
+const WORKER_SECRET_HEADER_MAP = process.env.WORKER_SECRET_HEADER_MAP || '';
+const WORKER_SECRET_HEADER_NAMES = WORKER_SECRET_HEADERS
+    ? WORKER_SECRET_HEADERS.split(',').map(s => s.trim()).filter(Boolean).map(s => s.toLowerCase())
+    : [];
+const WORKER_SECRET_HEADER_MAP_OBJ = WORKER_SECRET_HEADER_MAP
+    ? (() => {
+        const parsed = JSON.parse(WORKER_SECRET_HEADER_MAP);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    })()
+    : {};
+const WORKER_SECRET_HEADER_MAP_NORMALIZED = Object.fromEntries(
+    Object.entries(WORKER_SECRET_HEADER_MAP_OBJ).map(([k, v]) => [String(k).toLowerCase(), String(v ?? '')])
+);
 
 // HOST_MAPPING: JSON 格式，如 {"umi.li":"cloudflare-imgbed-buu.pages.dev"}
 const HOST_MAPPING = process.env.HOST_MAPPING
@@ -56,7 +70,16 @@ async function proxyRequest(req, res) {
 
     // 添加验证头
     if (WORKER_SECRET_KEY) {
-        headers['x-forwarded-by-worker'] = WORKER_SECRET_KEY;
+        const headerNames = WORKER_SECRET_HEADER_NAMES.length > 0
+            ? WORKER_SECRET_HEADER_NAMES
+            : ['x-forwarded-by-worker'];
+        for (const headerName of headerNames) {
+            headers[headerName] = WORKER_SECRET_KEY;
+        }
+    }
+    for (const [headerName, headerValue] of Object.entries(WORKER_SECRET_HEADER_MAP_NORMALIZED)) {
+        if (!headerName || !headerValue) continue;
+        headers[headerName] = headerValue;
     }
 
     const options = {

@@ -632,6 +632,9 @@ function renderGitForm({ config, tokenIsSet }) {
 }
 
 function renderTorcherinoForm({ config, secretIsSet }) {
+  const workerSecretHeaderMapRedacted = Object.fromEntries(
+    Object.entries(config.torcherino.workerSecretHeaderMap || {}).map(([k, v]) => [k, v ? "__SET__" : ""])
+  );
   return `
     <div class="card">
       <div class="card-title">服务说明</div>
@@ -640,7 +643,7 @@ function renderTorcherinoForm({ config, secretIsSet }) {
         <span>示例：</span>
         <code>DEFAULT_TARGET=your-project.pages.dev</code>
         <span class="spacer"></span>
-        <span>老环境变量：<code>DEFAULT_TARGET</code>、<code>HOST_MAPPING</code>、<code>WORKER_SECRET_KEY</code></span>
+        <span>老环境变量：<code>DEFAULT_TARGET</code>、<code>HOST_MAPPING</code>、<code>WORKER_SECRET_KEY</code>、<code>WORKER_SECRET_HEADERS</code>、<code>WORKER_SECRET_HEADER_MAP</code></span>
       </div>
     </div>
 
@@ -668,11 +671,37 @@ function renderTorcherinoForm({ config, secretIsSet }) {
           <div class="label">转发验证密钥 <small>（WORKER_SECRET_KEY）</small></div>
           <input type="password" name="workerSecretKey" value="" placeholder="${secretIsSet ? "已设置（留空不变）" : "未设置"}" />
           <div class="hint">
-            <span>可选：会以 <code>x-forwarded-by-worker</code> 头转发到上游。</span>
+            <span>可选：将密钥以指定 Header 转发给上游（默认 <code>x-forwarded-by-worker</code>）。</span>
             <span class="spacer"></span>
             <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
               <input type="checkbox" name="clearWorkerSecretKey" />
               清空密钥
+            </label>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">验证 Header 名称 <small>（WORKER_SECRET_HEADERS）</small></div>
+          <input type="text" name="workerSecretHeaders" value="${escapeHtml(
+            (config.torcherino.workerSecretHeaders || []).join(", ")
+          )}" placeholder="x-forwarded-by-worker" />
+          <div class="hint">
+            <span>可选：逗号分隔，可填多个；为空时默认只发送 <code>x-forwarded-by-worker</code>。</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">验证 Header 映射 <small>（WORKER_SECRET_HEADER_MAP）</small></div>
+          <textarea name="workerSecretHeaderMapJson" data-json>${escapeHtml(
+            JSON.stringify(workerSecretHeaderMapRedacted, null, 2)
+          )}</textarea>
+          <div class="hint">
+            <span>可选：JSON 对象，支持不同 Header 使用不同值；值为 <code>__SET__</code> 表示保留旧值。</span>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" type="button" data-format-json>格式化 JSON</button>
+            <span class="json-msg" aria-live="polite"></span>
+            <span class="spacer"></span>
+            <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+              <input type="checkbox" name="clearWorkerSecretHeaderMap" />
+              清空映射
             </label>
           </div>
         </div>
@@ -780,16 +809,42 @@ function renderWizardPage({ form, tokenIsSet, secretIsSet }) {
         </div>
 
         <details>
-          <summary>可选：转发验证 <small>WORKER_SECRET_KEY</small></summary>
+          <summary>可选：转发验证 <small>WORKER_SECRET_*</small></summary>
           <div class="row">
             <div class="label">转发验证密钥 <small>（WORKER_SECRET_KEY）</small></div>
             <input type="password" name="torcherinoWorkerSecretKey" value="" placeholder="${secretIsSet ? "已设置（留空不变）" : "未设置"}" />
             <div class="hint">
-              <span>会以 <code>x-forwarded-by-worker</code> 头转发给上游。</span>
+              <span>会以指定 Header 转发给上游（默认 <code>x-forwarded-by-worker</code>）。</span>
               <span class="spacer"></span>
               <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
                 <input type="checkbox" name="torcherinoClearWorkerSecretKey" />
                 清空密钥
+              </label>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">验证 Header 名称 <small>（WORKER_SECRET_HEADERS）</small></div>
+            <input type="text" name="torcherinoWorkerSecretHeaders" value="${escapeHtml(
+              form.torcherinoWorkerSecretHeaders || ""
+            )}" placeholder="x-forwarded-by-worker" />
+            <div class="hint">
+              <span>可选：逗号分隔，可填多个；为空时默认只发送 <code>x-forwarded-by-worker</code>。</span>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">验证 Header 映射 <small>（WORKER_SECRET_HEADER_MAP）</small></div>
+            <textarea name="torcherinoWorkerSecretHeaderMapJson" data-json>${escapeHtml(
+              form.torcherinoWorkerSecretHeaderMapJson || ""
+            )}</textarea>
+            <div class="hint">
+              <span>可选：JSON 对象；值为 <code>__SET__</code> 表示保留旧值；清空请勾选。</span>
+              <span class="spacer"></span>
+              <button class="btn btn-ghost" type="button" data-format-json>格式化 JSON</button>
+              <span class="json-msg" aria-live="polite"></span>
+              <span class="spacer"></span>
+              <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                <input type="checkbox" name="torcherinoClearWorkerSecretHeaderMap" />
+                清空映射
               </label>
             </div>
           </div>

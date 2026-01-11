@@ -88,6 +88,8 @@ npm start
 | DEFAULT_TARGET | 默认后端域名 |
 | HOST_MAPPING | 多域名映射（JSON 格式） |
 | WORKER_SECRET_KEY | 验证密钥 |
+| WORKER_SECRET_HEADERS | 转发到上游的 Header 名称（逗号分隔，默认 `x-forwarded-by-worker`） |
+| WORKER_SECRET_HEADER_MAP | 转发到上游的 Header->值（JSON 对象，会覆盖同名 Header 的 WORKER_SECRET_KEY 设置） |
 
 ## 健康检查
 
