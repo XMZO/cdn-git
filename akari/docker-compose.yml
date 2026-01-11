@@ -1,0 +1,36 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: akari-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  akari:
+    build: .
+    container_name: akari
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3100:3100" # admin panel
+      - "3000:3000" # torcherino
+      - "3001:3001" # cdnjs
+      - "3002:3002" # git
+    environment:
+      - AKARI_DB_PATH=/data/akari.db
+    env_file:
+      - .env
+    volumes:
+      - akari-data:/data
+
+volumes:
+  akari-data:
+  redis-data:

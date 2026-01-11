@@ -22,5 +22,5 @@ Thumbs.db
 **/build/
 torcherino/worker.js.bak
 
-# akari: 避免误提交嵌套仓库备份（迁移用）
-akari/.git.akari.bak/
+# 忽略本地数据
+data/
