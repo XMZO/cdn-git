@@ -114,6 +114,7 @@ async function handleRequest(req, res) {
     upstreamHeaders: upstreamResponse.headers,
     upstreamDomain,
     originalHost,
+    requestPathname: originalUrl.pathname,
     cacheControl,
     requestOrigin,
     corsExposeHeaders: config.corsExposeHeaders,
@@ -359,6 +360,7 @@ function buildClientResponseHeaders({
   upstreamHeaders,
   upstreamDomain,
   originalHost,
+  requestPathname,
   cacheControl,
   requestOrigin,
   corsExposeHeaders,
@@ -385,6 +387,8 @@ function buildClientResponseHeaders({
     headers[lowerKey] = value;
   });
 
+  maybeFixOctetStreamContentType(headers, requestPathname);
+
   headers["cache-control"] = cacheControl;
 
   applyCorsHeaders(headers, {
@@ -406,6 +410,35 @@ function buildClientResponseHeaders({
   }
 
   return headers;
+}
+
+function maybeFixOctetStreamContentType(headers, requestPathname) {
+  const ct = (headers["content-type"] || "").toString().toLowerCase();
+  if (!ct.startsWith("application/octet-stream")) return;
+
+  const guessed = guessMimeFromPathname(requestPathname);
+  if (!guessed) return;
+  headers["content-type"] = guessed;
+}
+
+function guessMimeFromPathname(pathname) {
+  const p = (pathname || "").toString();
+  const base = p.split("/").pop() || "";
+  const dot = base.lastIndexOf(".");
+  if (dot === -1 || dot === base.length - 1) return "";
+  const ext = base.slice(dot + 1).toLowerCase();
+
+  const map = {
+    webm: "video/webm",
+    mp4: "video/mp4",
+    webp: "image/webp",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+  };
+  return map[ext] || "";
 }
 
 function shouldRewriteHtml(contentType) {
