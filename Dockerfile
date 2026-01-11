@@ -8,9 +8,8 @@ RUN npm ci --omit=dev
 COPY src ./src
 
 ENV NODE_ENV=production
-ENV AKARI_DB_PATH=/data/akari.db
+ENV HAZUKI_DB_PATH=/data/hazuki.db
 
 EXPOSE 3100 3000 3001 3002
 
 CMD ["node", "src/index.js"]
-

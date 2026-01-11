@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: akari-redis
+    container_name: hazuki-redis
     restart: unless-stopped
     volumes:
       - redis-data:/data
@@ -12,9 +12,9 @@ services:
       timeout: 3s
       retries: 3
 
-  akari:
+  hazuki:
     build: .
-    container_name: akari
+    container_name: hazuki
     restart: unless-stopped
     depends_on:
       redis:
@@ -25,12 +25,12 @@ services:
       - "3001:3001" # cdnjs
       - "3002:3002" # git
     environment:
-      - AKARI_DB_PATH=/data/akari.db
+      - HAZUKI_DB_PATH=/data/hazuki.db
     env_file:
       - .env
     volumes:
-      - akari-data:/data
+      - hazuki-data:/data
 
 volumes:
-  akari-data:
+  hazuki-data:
   redis-data:

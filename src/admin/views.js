@@ -345,11 +345,11 @@ function renderSetupPage({ error }) {
     <div class="card-sub">首次启动未检测到管理员账号，请先创建本地管理员。</div>
     <form method="post" action="/setup">
       <div class="row">
-        <div class="label">管理员用户名 <small>（AKARI_ADMIN_USERNAME）</small></div>
+        <div class="label">管理员用户名 <small>（HAZUKI_ADMIN_USERNAME）</small></div>
         <input type="text" name="username" autocomplete="username" placeholder="admin" required />
       </div>
       <div class="row">
-        <div class="label">管理员密码 <small>（AKARI_ADMIN_PASSWORD）</small></div>
+        <div class="label">管理员密码 <small>（HAZUKI_ADMIN_PASSWORD）</small></div>
         <input type="password" name="password" autocomplete="new-password" required />
         <div class="hint">至少 8 位。</div>
       </div>
@@ -704,7 +704,7 @@ function renderVersionsPage({ versions }) {
   return `
     <div class="card">
       <div class="card-title">备份</div>
-      <div class="card-sub">导出的 JSON 是“加密后的配置”（包含 <code>enc:v1:...</code> 字段）。请妥善保管并确保服务器启动时提供同一 <code>AKARI_MASTER_KEY</code>。</div>
+      <div class="card-sub">导出的 JSON 是“加密后的配置”（包含 <code>enc:v1:...</code> 字段）。请妥善保管并确保服务器启动时提供同一 <code>HAZUKI_MASTER_KEY</code>。</div>
       <div class="btn-row">
         <a class="btn btn-primary" href="/config/export">下载备份</a>
         <a class="btn" href="/config/import">导入备份</a>
@@ -751,9 +751,9 @@ function renderWizardPage({ form, tokenIsSet, secretIsSet }) {
       <div class="card-sub">只填“最少必要项”。更细的缓存/CORS/替换规则等请去对应服务页的高级选项。</div>
       <div class="hint">
         <span>自检：</span>
-        <code data-fill-host="http://HOST:3000/_akari/health"></code>
-        <code data-fill-host="http://HOST:3001/_akari/health"></code>
-        <code data-fill-host="http://HOST:3002/_akari/health"></code>
+        <code data-fill-host="http://HOST:3000/_hazuki/health"></code>
+        <code data-fill-host="http://HOST:3001/_hazuki/health"></code>
+        <code data-fill-host="http://HOST:3002/_hazuki/health"></code>
       </div>
     </div>
 

@@ -62,7 +62,7 @@ function createCryptoContext({ db, masterKey }) {
       encryptString: (v) => v,
       decryptString: (v) => {
         if (typeof v === "string" && v.startsWith("enc:v1:")) {
-          throw new Error("AKARI_MASTER_KEY is required to decrypt stored secrets");
+          throw new Error("HAZUKI_MASTER_KEY is required to decrypt stored secrets");
         }
         return v;
       },

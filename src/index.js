@@ -16,9 +16,9 @@ const { startTorcherinoServer } = require("./proxies/torcherino");
 
 async function main() {
   const dbPath =
-    (process.env.AKARI_DB_PATH || "").toString().trim() ||
-    path.join(process.cwd(), "data", "akari.db");
-  const masterKey = (process.env.AKARI_MASTER_KEY || "").toString();
+    (process.env.HAZUKI_DB_PATH || "").toString().trim() ||
+    path.join(process.cwd(), "data", "hazuki.db");
+  const masterKey = (process.env.HAZUKI_MASTER_KEY || "").toString();
 
   const db = openDatabase(dbPath);
   migrate(db);
@@ -33,8 +33,8 @@ async function main() {
   startCdnjsServer({ configStore });
   startGitServer({ configStore });
 
-  console.log("akari: database ready");
-  console.log("akari: config ready");
+  console.log("hazuki: database ready");
+  console.log("hazuki: config ready");
 }
 
 main().catch((err) => {

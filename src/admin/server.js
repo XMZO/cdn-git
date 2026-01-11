@@ -19,7 +19,7 @@ const {
   renderWizardPage,
 } = require("./views");
 
-const COOKIE_NAME = "akari_session";
+const COOKIE_NAME = "hazuki_session";
 
 function startAdminServer({ db, configStore }) {
   const app = express();
@@ -58,7 +58,7 @@ function startAdminServer({ db, configStore }) {
     const user = verifyUserPassword({ db, username, password });
     if (!user) return res.redirect("/login?error=1");
 
-    const ttlSeconds = Number.parseInt((process.env.AKARI_SESSION_TTL_SECONDS || "86400").toString(), 10) || 86400;
+    const ttlSeconds = Number.parseInt((process.env.HAZUKI_SESSION_TTL_SECONDS || "86400").toString(), 10) || 86400;
     const token = createSession({ db, userId: user.id, ttlSeconds });
 
     const secure = isSecureRequest(req);
@@ -88,7 +88,7 @@ function startAdminServer({ db, configStore }) {
       if (!created) throw new Error("Failed to create user");
 
       const ttlSeconds =
-        Number.parseInt((process.env.AKARI_SESSION_TTL_SECONDS || "86400").toString(), 10) || 86400;
+        Number.parseInt((process.env.HAZUKI_SESSION_TTL_SECONDS || "86400").toString(), 10) || 86400;
       const token = createSession({ db, userId: created.id, ttlSeconds });
 
       const secure = isSecureRequest(req);
@@ -124,7 +124,7 @@ function startAdminServer({ db, configStore }) {
     if (!configStore.isEncryptionEnabled()) {
       const hasSecret = !!(config.git.githubToken || config.torcherino.workerSecretKey);
       if (hasSecret) {
-        warnings.push("未设置 AKARI_MASTER_KEY：敏感配置将以明文存储在 SQLite 中。");
+        warnings.push("未设置 HAZUKI_MASTER_KEY：敏感配置将以明文存储在 SQLite 中。");
       }
     }
 
@@ -509,7 +509,7 @@ function startAdminServer({ db, configStore }) {
   app.get("/config/export", requireAuth, (req, res) => {
     const encrypted = configStore.getEncryptedConfig();
     res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("content-disposition", "attachment; filename=\"akari-config.json\"");
+    res.setHeader("content-disposition", "attachment; filename=\"hazuki-config.json\"");
     res.end(JSON.stringify(encrypted, null, 2));
   });
 
@@ -559,7 +559,7 @@ function startAdminServer({ db, configStore }) {
 
   const server = app.listen(port, "0.0.0.0", () => {
     // eslint-disable-next-line no-console
-    console.log(`akari admin: http://0.0.0.0:${port}`);
+    console.log(`hazuki admin: http://0.0.0.0:${port}`);
   });
 
   return { app, server };
@@ -663,8 +663,8 @@ function isSecureRequest(req) {
 function bootstrapAdminIfNeeded({ db }) {
   ensureBootstrapAdmin({
     db,
-    username: process.env.AKARI_ADMIN_USERNAME,
-    password: process.env.AKARI_ADMIN_PASSWORD,
+    username: process.env.HAZUKI_ADMIN_USERNAME,
+    password: process.env.HAZUKI_ADMIN_PASSWORD,
   });
 }
 

@@ -44,7 +44,7 @@ function rewriteBody(body, reqOrigin) {
 
 async function proxyRequest({ req, res, runtime }) {
   const path = (req.url || "").toString().split("?")[0];
-  if ((req.method === "GET" || req.method === "HEAD") && path === "/_akari/health") {
+  if ((req.method === "GET" || req.method === "HEAD") && path === "/_hazuki/health") {
     const payload = {
       ok: true,
       service: "torcherino",

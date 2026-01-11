@@ -95,7 +95,7 @@ async function handleRequest(req, res, config) {
   const originalUrl = new URL(req.url, `${originalProto}://${originalHost}`);
   const requestOrigin = (req.headers.origin || "").toString();
 
-  if ((req.method === "GET" || req.method === "HEAD") && originalUrl.pathname === "/_akari/health") {
+  if ((req.method === "GET" || req.method === "HEAD") && originalUrl.pathname === "/_hazuki/health") {
     const payload = {
       ok: true,
       service: "git",

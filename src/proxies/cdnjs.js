@@ -106,7 +106,7 @@ function startCdnjsServer({ configStore }) {
     }
   });
 
-  app.get("/_akari/health", (req, res) => {
+  app.get("/_hazuki/health", (req, res) => {
     res.type("application/json; charset=utf-8").send(
       JSON.stringify(
         {
