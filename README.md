@@ -1,7 +1,9 @@
 # Hazuki Proxy Suite
 
 <p align="center">
-  <img src="./avatar.png" alt="Hazuki" width="160" />
+  <a href="https://github.com/XMZO/Hazuki">
+    <img src="./avatar.png" alt="Hazuki" width="160" />
+  </a>
 </p>
 
 把 `cdnjs`、`git`、`torcherino` 三个代理服务合并为一个大项目：同一进程多端口运行 + SQLite 配置中心 + Web 面板。
