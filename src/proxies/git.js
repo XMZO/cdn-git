@@ -183,11 +183,12 @@ async function handleRequest(req, res, config) {
   const upstreamResponse = await fetch(upstreamUrl, fetchOptions);
 
   const upstreamContentType = upstreamResponse.headers.get("content-type") || "";
-  const shouldRewrite = shouldRewriteHtml(upstreamContentType);
+  const effectiveContentType = resolveContentTypeForPolicy(upstreamContentType, originalUrl.pathname);
+  const shouldRewrite = shouldRewriteHtml(effectiveContentType);
 
   const cacheControl = computeCacheControl({
     disableCache: config.disableCache,
-    contentType: upstreamContentType,
+    contentType: effectiveContentType,
     cacheControl: config.cacheControl,
     cacheControlMedia: config.cacheControlMedia,
     cacheControlText: config.cacheControlText,
@@ -370,12 +371,21 @@ function buildClientResponseHeaders({
 }
 
 function maybeFixOctetStreamContentType(headers, requestPathname) {
-  const ct = (headers["content-type"] || "").toString().toLowerCase();
-  if (!ct.startsWith("application/octet-stream")) return;
+  const ct = (headers["content-type"] || "").toString().trim().toLowerCase();
+  if (ct && !ct.startsWith("application/octet-stream")) return;
 
   const guessed = guessMimeFromPathname(requestPathname);
   if (!guessed) return;
   headers["content-type"] = guessed;
+}
+
+function resolveContentTypeForPolicy(contentType, requestPathname) {
+  const ct = (contentType || "").toString().trim().toLowerCase();
+  if (!ct || ct.startsWith("application/octet-stream")) {
+    const guessed = guessMimeFromPathname(requestPathname);
+    return guessed || contentType || "";
+  }
+  return contentType || "";
 }
 
 function guessMimeFromPathname(pathname) {
@@ -386,14 +396,45 @@ function guessMimeFromPathname(pathname) {
   const ext = base.slice(dot + 1).toLowerCase();
 
   const map = {
+    js: "application/javascript; charset=utf-8",
+    cjs: "application/javascript; charset=utf-8",
+    mjs: "application/javascript; charset=utf-8",
+    jsx: "application/javascript; charset=utf-8",
+    css: "text/css; charset=utf-8",
+    html: "text/html; charset=utf-8",
+    htm: "text/html; charset=utf-8",
+    json: "application/json; charset=utf-8",
+    map: "application/json; charset=utf-8",
+    yml: "application/x-yaml; charset=utf-8",
+    yaml: "application/x-yaml; charset=utf-8",
+    toml: "application/toml; charset=utf-8",
+    xml: "application/xml; charset=utf-8",
+    txt: "text/plain; charset=utf-8",
+    md: "text/plain; charset=utf-8",
+    csv: "text/csv; charset=utf-8",
+    m3u: "application/vnd.apple.mpegurl; charset=utf-8",
+    m3u8: "application/vnd.apple.mpegurl; charset=utf-8",
+    wasm: "application/wasm",
     webm: "video/webm",
     mp4: "video/mp4",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    m4a: "audio/mp4",
     webp: "image/webp",
+    avif: "image/avif",
     png: "image/png",
+    ico: "image/x-icon",
+    cur: "image/x-icon",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     gif: "image/gif",
     svg: "image/svg+xml",
+    woff2: "font/woff2",
+    woff: "font/woff",
+    ttf: "font/ttf",
+    otf: "font/otf",
+    eot: "application/vnd.ms-fontobject",
   };
   return map[ext] || "";
 }

@@ -1,0 +1,135 @@
+{{define "wizard"}}
+  <div class="grid">
+    <div class="card">
+      <h2>快速向导</h2>
+      <div class="muted small">一次性把三项核心服务配置好（保存后立即生效；端口需重启）。</div>
+    </div>
+
+    <form class="form" method="post" action="/wizard">
+      <details class="card accordion" open>
+        <summary>Torcherino <span class="muted small">（通用反代）</span></summary>
+        <div class="body">
+          <div class="field">
+            <label>默认目标 <span class="key">DEFAULT_TARGET</span></label>
+            <input type="text" name="torcherinoDefaultTarget" value="{{.TorcherinoDefaultTarget}}" placeholder="example.pages.dev" />
+            <div class="hint">至少填写 DEFAULT_TARGET 或 HOST_MAPPING（二选一）。</div>
+          </div>
+          <div class="field">
+            <label>HOST_MAPPING（JSON） <span class="key">HOST_MAPPING</span></label>
+            <textarea id="wizardTorcherinoHostMappingJson" name="torcherinoHostMappingJson" data-json placeholder="{&quot;a.com&quot;:&quot;xxx.pages.dev&quot;}">{{.TorcherinoHostMappingJSON}}</textarea>
+            <div class="hint hint-line">
+              <span>只填域名，不要带 http(s)://</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button" data-format-json="#wizardTorcherinoHostMappingJson">格式化 JSON</button>
+              <span class="json-msg" aria-live="polite"></span>
+            </div>
+          </div>
+
+          <div class="grid cols-2">
+            <div class="field">
+              <label>WORKER_SECRET_HEADERS <span class="key">WORKER_SECRET_HEADERS</span></label>
+              <input type="text" name="torcherinoWorkerSecretHeaders" value="{{.TorcherinoWorkerSecretHeaders}}" placeholder="x-forwarded-by-worker" />
+              <div class="hint">逗号分隔；留空则默认 <code>x-forwarded-by-worker</code>。</div>
+            </div>
+            <div class="field">
+              <label>WORKER_SECRET_KEY <span class="key">WORKER_SECRET_KEY</span></label>
+              <input id="wizardWorkerSecretKey" type="password" name="torcherinoWorkerSecretKey" value="" placeholder="{{if .SecretIsSet}}已设置（留空保持）{{else}}留空=不启用{{end}}" />
+              <div class="hint hint-line">
+                <span class="spacer"></span>
+                <label class="pill" style="font-weight:800;">
+                  <input type="checkbox" data-toggle-password="#wizardWorkerSecretKey" />
+                  显示
+                </label>
+                <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                  <input type="checkbox" name="torcherinoClearWorkerSecretKey" />
+                  清空
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>WORKER_SECRET_HEADER_MAP（JSON） <span class="key">WORKER_SECRET_HEADER_MAP</span></label>
+            <textarea id="wizardWorkerSecretHeaderMapJson" name="torcherinoWorkerSecretHeaderMapJson" data-json>{{.TorcherinoWorkerSecretHeaderMap}}</textarea>
+            <div class="hint hint-line">
+              <span><code>__SET__</code> 表示沿用已保存的值。</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button" data-format-json="#wizardWorkerSecretHeaderMapJson">格式化 JSON</button>
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="torcherinoClearWorkerSecretHeaderMap" />
+                清空 HeaderMap
+              </label>
+              <span class="json-msg" aria-live="polite"></span>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="card accordion" open>
+        <summary>jsDelivr 缓存 <span class="muted small">（cdnjs）</span></summary>
+        <div class="body">
+          <div class="grid cols-2">
+            <div class="field">
+              <label>DEFAULT_GH_USER <span class="key">DEFAULT_GH_USER</span></label>
+              <input type="text" name="cdnjsDefaultGhUser" value="{{.CdnjsDefaultGhUser}}" placeholder="XMZO" />
+            </div>
+            <div class="field">
+              <label>ALLOWED_GH_USERS <span class="key">ALLOWED_GH_USERS</span></label>
+              <input type="text" name="cdnjsAllowedGhUsers" value="{{.CdnjsAllowedGhUsers}}" placeholder="XMZO,starsei" />
+            </div>
+          </div>
+          <div class="hint">至少填写 DEFAULT_GH_USER 或 ALLOWED_GH_USERS（二选一）。</div>
+
+          <div class="grid cols-2" style="margin-top:10px;">
+            <div class="field">
+              <label>ASSET_URL <span class="key">ASSET_URL</span></label>
+              <input type="text" name="cdnjsAssetUrl" value="{{.CdnjsAssetURL}}" placeholder="https://cdn.jsdelivr.net" />
+            </div>
+            <div class="field">
+              <label>REDIS_HOST / REDIS_PORT</label>
+              <div class="grid cols-2">
+                <input type="text" name="cdnjsRedisHost" value="{{.CdnjsRedisHost}}" placeholder="redis" />
+                <input type="text" name="cdnjsRedisPort" value="{{.CdnjsRedisPort}}" placeholder="6379" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="card accordion" open>
+        <summary>GitHub Raw 代理</summary>
+        <div class="body">
+          <div class="field">
+            <label>UPSTREAM_PATH <span class="key">UPSTREAM_PATH</span></label>
+            <input type="text" name="gitUpstreamPath" value="{{.GitUpstreamPath}}" placeholder="/owner/repo/branch" />
+            <div class="hint">至少 3 段：<code>/owner/repo/branch</code>。</div>
+          </div>
+
+          <div class="field">
+            <label>GITHUB_TOKEN <span class="key">GITHUB_TOKEN</span></label>
+            <input id="wizardGitToken" type="password" name="gitGithubToken" value="" placeholder="{{if .TokenIsSet}}已设置（留空保持）{{else}}留空=不设置{{end}}" />
+            <div class="hint hint-line">
+              <span class="spacer"></span>
+              <label class="pill" style="font-weight:800;">
+                <input type="checkbox" data-toggle-password="#wizardGitToken" />
+                显示
+              </label>
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="gitClearGithubToken" />
+                清空 GITHUB_TOKEN
+              </label>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="card">
+        <h3>保存</h3>
+        <div class="btn-row">
+          <button class="btn primary" type="submit">保存配置</button>
+          <a class="btn" href="/">返回概览</a>
+        </div>
+      </div>
+    </form>
+  </div>
+{{end}}

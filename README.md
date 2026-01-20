@@ -7,9 +7,14 @@
 ```
 ├── cdnjs/        # jsDelivr CDN 缓存代理（独立版本）
 ├── git/          # GitHub Raw 文件代理（独立版本）
+├── go/           # Go 重写（推荐）
 ├── torcherino/   # 通用反向代理（独立版本）
 └── src/          # Hazuki 主进程
 ```
+
+## Go 重写（推荐）
+
+见 `go/README.md`（已实现：`admin` + `torcherino` + `cdnjs` + `git` + Web 面板完整配置 + `wizard` + `versions` + `export/import` + `account`）。
 
 ## 端口（默认）
 
@@ -19,8 +24,21 @@
 - `3002`：git（`raw.githubusercontent.com` 代理，支持私有仓库 Token/CORS/替换规则）
 
 端口可在 Web 面板里修改；使用 Docker 时如需改端口，记得同步调整 `docker-compose.yml` 的端口映射。
+除“端口”外，Web 面板保存后会热更新立即生效；端口修改需要重启进程/容器。
 
 ## 快速部署（Docker）
+
+### Go 版（推荐）
+
+```bash
+cd go
+cp .env.example .env
+docker compose up -d --build
+```
+
+启动后：打开 `http://你的服务器:3100` 登录并配置（推荐先用“快速向导”）。
+
+### Node 版（旧：src/）
 
 ```bash
 cp .env.example .env
@@ -32,11 +50,23 @@ docker compose up -d --build
 
 ## 本地启动（不使用 Docker）
 
+### Node 版（src/）
+
 ```bash
 cp .env.example .env
 npm install
 npm start
 ```
+
+### Go 版（go/）
+
+```bash
+cd go
+cp .env.example .env
+go run ./cmd/hazuki
+```
+
+如果不使用 Docker：请确保 Redis 可用（或把 `REDIS_HOST` 改为 `127.0.0.1` / 在 Web 面板里改）。
 
 ## 管理员账号（用户名/密码）
 
@@ -57,6 +87,8 @@ npm start
 | DEFAULT_GH_USER | 默认用户（简短路径使用） |
 | REDIS_HOST / REDIS_PORT | Redis 地址 |
 
+缓存 TTL（默认按后缀，单位秒；可在 Web 面板的 jsDelivr 页面调整 Default TTL / Overrides）：`js/css/png/...` 30 天，`mp4/mp3/pdf/...` 7 天，`json/xml/txt/...` 1 天，`html/htm` 1 小时，其它走 Default TTL。
+
 访问方式：
 - `/gh/用户名/文件路径` - 指定用户
 - `/文件路径` - 使用默认用户
@@ -71,12 +103,15 @@ npm start
 | GITHUB_TOKEN | GitHub Personal Access Token |
 | GITHUB_AUTH_SCHEME | `token` 或 `Bearer` |
 | UPSTREAM | 上游域名（默认 `raw.githubusercontent.com`） |
+| UPSTREAM_MOBILE | 移动端上游域名（按 UA 判断，默认同 UPSTREAM） |
 | UPSTREAM_PATH | 默认仓库路径（如 `/用户名/仓库/分支`） |
+| UPSTREAM_HTTPS | `true` 使用 https（默认 `true`） |
 
 访问方式：
 - `/文件路径` - 自动拼接 UPSTREAM_PATH
 
 其他配置（CORS、缓存策略、替换规则、地区/IP 封禁等）见 `.env.example` 或 Web 面板的 git 配置页。
+若上游返回 `application/octet-stream`（或不返回 `Content-Type`），会按扩展名修正常见类型的 `Content-Type`（用于避免浏览器 ORB 拦截，并让缓存策略按后缀分类）。
 
 ### torcherino - 通用反向代理
 

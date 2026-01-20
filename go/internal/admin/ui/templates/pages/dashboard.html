@@ -1,0 +1,97 @@
+{{define "dashboard"}}
+  <div class="grid">
+    <div class="card">
+      <h2>概览</h2>
+      <div class="muted small">配置更新时间：{{.UpdatedAt}}</div>
+
+      <div class="btn-row">
+        <a class="btn" href="/wizard">快速向导</a>
+        <a class="btn" href="/config/torcherino">配置 Torcherino</a>
+        <a class="btn" href="/config/cdnjs">配置 jsDelivr 缓存</a>
+        <a class="btn" href="/config/git">配置 Git 代理</a>
+        <a class="btn" href="/config/versions">版本 & 备份</a>
+        {{if .AdminURL}}<a class="btn" href="{{.AdminURL}}/_hazuki/health" target="_blank" rel="noreferrer">管理面板 Health</a>{{end}}
+      </div>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>Torcherino</h3>
+        <div class="muted small">端口：<code>{{.Ports.Torcherino}}</code></div>
+        <div class="muted small" style="margin-top:8px;">地址：<code>{{.TorcherinoURL}}</code></div>
+        {{if .TorcherinoStatus.Status}}
+          <div style="margin-top:8px;">
+            {{template "serviceStatusPill" .TorcherinoStatus}}
+            {{if and (eq .TorcherinoStatus.Status "error") .TorcherinoStatus.Error}}
+              <span class="muted small" style="margin-left:8px;">{{.TorcherinoStatus.Error}}</span>
+            {{end}}
+          </div>
+        {{end}}
+        <div class="btn-row">
+          <a class="btn" href="/config/torcherino">配置</a>
+          <a class="btn" href="{{.TorcherinoURL}}" target="_blank" rel="noreferrer">打开</a>
+          <a class="btn" href="{{.TorcherinoHealthURL}}" target="_blank" rel="noreferrer">Health</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>jsDelivr 缓存</h3>
+        <div class="muted small">端口：<code>{{.Ports.Cdnjs}}</code></div>
+        <div class="muted small" style="margin-top:8px;">地址：<code>{{.CdnjsURL}}</code></div>
+        {{if .CdnjsStatus.Status}}
+          <div style="margin-top:8px;">
+            {{template "serviceStatusPill" .CdnjsStatus}}
+            {{if and (eq .CdnjsStatus.Status "error") .CdnjsStatus.Error}}
+              <span class="muted small" style="margin-left:8px;">{{.CdnjsStatus.Error}}</span>
+            {{end}}
+          </div>
+        {{end}}
+        {{if .CdnjsRedis.Status}}
+          {{if eq .CdnjsRedis.Status "ok"}}
+            <div style="margin-top:8px;"><span class="pill ok">Redis 正常 · {{.CdnjsRedis.LatencyMS}}ms · {{.CdnjsRedis.Addr}}</span></div>
+          {{else if eq .CdnjsRedis.Status "error"}}
+            <div style="margin-top:8px;"><span class="pill err">Redis 异常 · {{.CdnjsRedis.Addr}}</span></div>
+          {{else}}
+            <div style="margin-top:8px;"><span class="pill">Redis 未配置</span></div>
+          {{end}}
+        {{end}}
+        <div class="btn-row">
+          <a class="btn" href="/config/cdnjs">配置</a>
+          <a class="btn" href="{{.CdnjsURL}}" target="_blank" rel="noreferrer">打开</a>
+          <a class="btn" href="{{.CdnjsHealthURL}}" target="_blank" rel="noreferrer">Health</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>GitHub Raw</h3>
+        <div class="muted small">端口：<code>{{.Ports.Git}}</code></div>
+        <div class="muted small" style="margin-top:8px;">地址：<code>{{.GitURL}}</code></div>
+        {{if .GitStatus.Status}}
+          <div style="margin-top:8px;">
+            {{template "serviceStatusPill" .GitStatus}}
+            {{if and (eq .GitStatus.Status "error") .GitStatus.Error}}
+              <span class="muted small" style="margin-left:8px;">{{.GitStatus.Error}}</span>
+            {{end}}
+          </div>
+        {{end}}
+        <div class="btn-row">
+          <a class="btn" href="/config/git">配置</a>
+          <a class="btn" href="{{.GitURL}}" target="_blank" rel="noreferrer">打开</a>
+          <a class="btn" href="{{.GitHealthURL}}" target="_blank" rel="noreferrer">Health</a>
+        </div>
+      </div>
+    </div>
+
+    {{if .Warnings}}
+      <div class="card">
+        <h3>提醒</h3>
+        <div class="muted small">这些问题不会阻止启动，但可能导致功能不可用或存在安全风险。</div>
+        <ul style="margin:10px 0 0; padding-left: 18px;">
+          {{range .Warnings}}
+            <li style="margin:6px 0;">{{.}}</li>
+          {{end}}
+        </ul>
+      </div>
+    {{end}}
+  </div>
+{{end}}

@@ -1,0 +1,42 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hazuki-go-redis
+    restart: unless-stopped
+    volumes:
+      - hazuki-go-redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  hazuki-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hazuki-go
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3100:3100" # admin panel
+      - "3000:3000" # torcherino
+      - "3001:3001" # cdnjs
+      - "3002:3002" # git
+    environment:
+      - HAZUKI_DB_PATH=/data/hazuki.db
+      # Override local default (go/.env.example uses 127.0.0.1)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env
+    volumes:
+      - hazuki-go-data:/data
+
+volumes:
+  hazuki-go-data:
+  hazuki-go-redis-data:
+

@@ -1,26 +1,46 @@
-# 忽略 node_modules
+# ===== Node =====
 **/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# 忽略环境变量文件（包含敏感信息）
+# ===== Env (secrets) =====
 .env
+.env.*
+!.env.example
 
-# 忽略日志
+# ===== Logs =====
 *.log
 
-# 忽略 IDE 文件
+# ===== Go build =====
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# ===== IDE =====
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# 忽略 OS 文件
+# ===== OS =====
 .DS_Store
 Thumbs.db
 
-# 忽略构建产物
+# ===== Build outputs =====
 dist/
 build/
 
-# 忽略本地数据
+# ===== Local data / DB =====
 data/
+*.db
+*.db-*
+*.sqlite*
+
+# ===== Archives =====
+*.7z
 

@@ -1,0 +1,127 @@
+{{define "system"}}
+  <div class="grid">
+    <div class="card">
+      <h2>系统</h2>
+      <div class="muted small">运行状态、健康检查与数据存储信息。</div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h3>运行信息</h3>
+        <div class="kvs">
+          <div class="muted">当前时间</div>
+          <div><code>{{.Now}}</code></div>
+          <div class="muted">启动时间</div>
+          <div><code>{{.StartedAt}}</code></div>
+          <div class="muted">运行时长</div>
+          <div><code>{{.Uptime}}</code></div>
+          <div class="muted">Go</div>
+          <div><code>{{.GoVersion}}</code></div>
+          <div class="muted">Build</div>
+          <div><code>{{.BuildVersion}}</code></div>
+          <div class="muted">Session TTL</div>
+          <div><code>{{.SessionTTLSeconds}}</code> 秒</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>配置与数据</h3>
+        <div class="kvs">
+          <div class="muted">配置更新时间</div>
+          <div><code>{{.ConfigUpdatedAt}}</code></div>
+          <div class="muted">加密</div>
+          <div>
+            {{if .EncryptionEnabled}}
+              <span class="pill ok">已启用</span>
+            {{else}}
+              <span class="pill err">未启用</span>
+            {{end}}
+          </div>
+          <div class="muted">SQLite</div>
+          <div><code>{{.DBPath}}</code></div>
+          <div class="muted">DB 大小</div>
+          <div><code>{{.DBSize}}</code></div>
+          <div class="muted">管理员用户数</div>
+          <div><code>{{.UsersCount}}</code></div>
+          <div class="muted">配置版本数</div>
+          <div><code>{{.VersionsCount}}</code></div>
+          <div class="muted">会话数</div>
+          <div><code>{{.SessionsCount}}</code></div>
+        </div>
+        <div class="btn-row">
+          <a class="btn" href="/config/versions">版本 & 备份</a>
+          <a class="btn" href="/config/export">下载备份</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>服务状态（本机 /_hazuki/health）</h3>
+      <div class="muted small">用于快速判断端口是否在本机监听（Docker/本机均可）。</div>
+
+      <div class="grid cols-2" style="margin-top:12px;">
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">Admin</h3>
+          <div class="muted small">端口：<code>{{.Ports.Admin}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" .AdminStatus}}</div>
+          {{if and (eq .AdminStatus.Status "error") .AdminStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">错误：{{.AdminStatus.Error}}</div>
+          {{end}}
+        </div>
+
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">Torcherino</h3>
+          <div class="muted small">端口：<code>{{.Ports.Torcherino}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" .TorcherinoStatus}}</div>
+          {{if and (eq .TorcherinoStatus.Status "error") .TorcherinoStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">错误：{{.TorcherinoStatus.Error}}</div>
+          {{end}}
+        </div>
+
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">jsDelivr 缓存</h3>
+          <div class="muted small">端口：<code>{{.Ports.Cdnjs}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" .CdnjsStatus}}</div>
+          {{if and (eq .CdnjsStatus.Status "error") .CdnjsStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">错误：{{.CdnjsStatus.Error}}</div>
+          {{end}}
+        </div>
+
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">GitHub Raw</h3>
+          <div class="muted small">端口：<code>{{.Ports.Git}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" .GitStatus}}</div>
+          {{if and (eq .GitStatus.Status "error") .GitStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">错误：{{.GitStatus.Error}}</div>
+          {{end}}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Redis（cdnjs）</h3>
+
+      {{if eq .Redis.Status "ok"}}
+        <div class="pill ok">Redis 正常 · {{.Redis.LatencyMS}}ms · <code>{{.Redis.Addr}}</code></div>
+        <div class="kvs" style="margin-top:12px;">
+          <div class="muted">Version</div>
+          <div>{{if .Redis.ServerVersion}}<code>{{.Redis.ServerVersion}}</code>{{else}}-{{end}}</div>
+          <div class="muted">Uptime</div>
+          <div>{{if gt .Redis.UptimeSeconds 0}}<code>{{.Redis.UptimeSeconds}}</code> 秒{{else}}-{{end}}</div>
+          <div class="muted">Clients</div>
+          <div>{{if gt .Redis.ConnectedClients 0}}<code>{{.Redis.ConnectedClients}}</code>{{else}}-{{end}}</div>
+          <div class="muted">Used Memory</div>
+          <div>{{if .Redis.UsedMemoryHuman}}<code>{{.Redis.UsedMemoryHuman}}</code>{{else}}-{{end}}</div>
+          <div class="muted">DBSize</div>
+          <div><code>{{.Redis.DBSize}}</code> keys</div>
+        </div>
+      {{else if eq .Redis.Status "error"}}
+        <div class="pill err">Redis 异常 · <code>{{.Redis.Addr}}</code></div>
+        {{if .Redis.Error}}<div class="muted small" style="margin-top:10px;">错误：{{.Redis.Error}}</div>{{end}}
+      {{else}}
+        <div class="pill">Redis 未配置</div>
+      {{end}}
+    </div>
+  </div>
+{{end}}
+

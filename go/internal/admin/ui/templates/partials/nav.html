@@ -1,0 +1,41 @@
+{{define "nav"}}
+  <nav class="nav" aria-label="Hazuki Admin Navigation">
+    <div class="section">通用</div>
+    <a href="/" class="{{if eq .BodyTemplate "dashboard"}}active{{end}}">
+      <span>概览</span>
+    </a>
+    <a href="/system" class="{{if eq .BodyTemplate "system"}}active{{end}}">
+      <span>系统</span>
+    </a>
+    <a href="/wizard" class="{{if eq .BodyTemplate "wizard"}}active{{end}}">
+      <span>快速向导</span>
+    </a>
+
+    <div class="section">服务</div>
+    <a href="/config/torcherino" class="{{if eq .BodyTemplate "torcherino"}}active{{end}}">
+      <span>Torcherino</span>
+    </a>
+    <a href="/config/cdnjs" class="{{if eq .BodyTemplate "cdnjs"}}active{{end}}">
+      <span>jsDelivr 缓存</span>
+    </a>
+    <a href="/config/git" class="{{if eq .BodyTemplate "git"}}active{{end}}">
+      <span>GitHub Raw</span>
+    </a>
+
+    <div class="section">数据</div>
+    <a href="/config/versions" class="{{if eq .BodyTemplate "versions"}}active{{end}}">
+      <span>版本 & 备份</span>
+    </a>
+    <a href="/config/import" class="{{if eq .BodyTemplate "import"}}active{{end}}">
+      <span>导入备份</span>
+    </a>
+    <a href="/config/export">
+      <span>下载备份</span>
+    </a>
+
+    <div class="section">账号</div>
+    <a href="/account" class="{{if eq .BodyTemplate "account"}}active{{end}}">
+      <span>账号</span>
+    </a>
+  </nav>
+{{end}}

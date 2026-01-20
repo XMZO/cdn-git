@@ -1,0 +1,68 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{.Title}} - Hazuki</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body data-page="{{.BodyTemplate}}">
+    <div class="app">
+      {{if .User}}
+        <aside class="sidebar">
+          <div class="brand">
+            <div class="logo" aria-hidden="true"></div>
+            <div>Hazuki</div>
+          </div>
+          <div class="meta">Hazuki 管理面板（本地管理员）。</div>
+          {{template "nav" .}}
+          <div class="footer">
+            <div class="pill">当前用户：<code>{{.User.Username}}</code></div>
+            <form method="post" action="/logout" style="margin:0">
+              <button class="btn" type="submit">退出登录</button>
+            </form>
+          </div>
+        </aside>
+      {{end}}
+
+      <div class="main">
+        <header class="topbar">
+          <div>
+            <div class="title">{{.Title}}</div>
+            {{if .User}}
+              <div class="sub">保存后会热更新立即生效；端口修改需要重启进程。</div>
+            {{else}}
+              <div class="sub">Hazuki 管理面板</div>
+            {{end}}
+          </div>
+
+          <div class="actions">
+            {{if .User}}
+              <details class="mobile-nav">
+                <summary class="btn">菜单</summary>
+                <div class="panel">
+                  {{template "nav" .}}
+                  <div style="height:10px;"></div>
+                  <form method="post" action="/logout" style="margin:0">
+                    <button class="btn" type="submit">退出 ({{.User.Username}})</button>
+                  </form>
+                </div>
+              </details>
+            {{else}}
+              <a class="btn" href="/login">登录</a>
+            {{end}}
+          </div>
+        </header>
+
+        <main class="container">
+          {{template "flash" .}}
+          {{render .BodyTemplate .}}
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
+{{end}}
+

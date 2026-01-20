@@ -1,0 +1,44 @@
+# Hazuki (Go rewrite)
+
+This folder contains the Go rewrite of Hazuki.
+
+## Requirements
+
+- Go 1.24+
+
+## Run (dev)
+
+```bash
+cd go
+cp .env.example .env
+go run ./cmd/hazuki
+```
+
+## Run (Docker Compose)
+
+```bash
+cd go
+cp .env.example .env
+docker compose up -d --build
+```
+
+Then open:
+
+- Admin panel: `http://127.0.0.1:3100`
+- Wizard: `http://127.0.0.1:3100/wizard`
+- Cdnjs proxy: `http://127.0.0.1:3001`
+- Git proxy: `http://127.0.0.1:3002`
+- Torcherino proxy: `http://127.0.0.1:3000`
+
+## Admin username/password
+
+- First run: go to `/setup` to create an admin user
+- Or set env vars before first start: `HAZUKI_ADMIN_USERNAME` / `HAZUKI_ADMIN_PASSWORD`
+
+## Notes
+
+- Config is stored in SQLite (`HAZUKI_DB_PATH`, default: `data/hazuki.db` relative to your working dir).
+- `HAZUKI_MASTER_KEY` enables at-rest encryption for secrets already stored as `enc:v1:...`.
+- `cdnjs` cache TTL is suffix-based (compatible with the Node defaults) and can be overridden in the admin panel (`Default TTL` + `TTL Overrides`).
+- Admin panel features: `wizard`, `torcherino/cdnjs/git` configs, `versions` rollback, `export/import` backup, `account` password change.
+- Redis is optional but recommended for `cdnjs` caching. If you run without Docker, set `REDIS_HOST=127.0.0.1` (or change it in the web panel) and make sure Redis is running.
