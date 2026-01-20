@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const path = require("node:path");
 
 const { AppConfigSchema } = require("../storage/schema");
 const { countUsers, createUser, ensureBootstrapAdmin, verifyUserPassword, updateUserPassword } = require("../storage/users");
@@ -25,6 +26,10 @@ function startAdminServer({ db, configStore }) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.urlencoded({ extended: false, limit: "256kb" }));
+
+  const favPath = path.join(__dirname, "..", "..", "fav.png");
+  app.get("/fav.png", (_req, res) => res.type("png").sendFile(favPath));
+  app.get("/favicon.ico", (_req, res) => res.redirect(302, "/fav.png"));
 
   // Best-effort cleanup.
   try {

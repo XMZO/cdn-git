@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+COPY fav.png ./fav.png
 COPY src ./src
 
 ENV NODE_ENV=production

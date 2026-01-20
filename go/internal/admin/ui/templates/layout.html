@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{{.Title}} - Hazuki</title>
     <link rel="stylesheet" href="/assets/style.css" />
+    <link rel="icon" href="/assets/fav.png" type="image/png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/assets/fav.png" />
     <script src="/assets/app.js" defer></script>
   </head>
   <body data-page="{{.BodyTemplate}}">
@@ -13,7 +15,7 @@
       {{if .User}}
         <aside class="sidebar">
           <div class="brand">
-            <div class="logo" aria-hidden="true"></div>
+            <img class="logo" src="/assets/avatar.png" alt="" width="40" height="40" aria-hidden="true" />
             <div>Hazuki</div>
           </div>
           <div class="meta">Hazuki 管理面板（本地管理员）。</div>
@@ -65,4 +67,3 @@
   </body>
 </html>
 {{end}}
-

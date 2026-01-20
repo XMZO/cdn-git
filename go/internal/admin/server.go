@@ -249,6 +249,8 @@ func NewHandler(opts Options) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(uiAssetsFS))))
+	mux.Handle("/favicon.ico", http.RedirectHandler("/assets/fav.png", http.StatusFound))
+	mux.Handle("/fav.png", http.RedirectHandler("/assets/fav.png", http.StatusFound))
 	mux.HandleFunc("/_hazuki/health", s.wrap(s.health))
 	mux.HandleFunc("/setup", s.wrap(s.setup))
 	mux.HandleFunc("/login", s.wrap(s.login))

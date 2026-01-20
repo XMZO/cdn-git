@@ -87,6 +87,8 @@ function renderLayout({ title, user, content, notice, error }) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)} - Hazuki</title>
+  <link rel="icon" href="/fav.png" type="image/png" sizes="512x512" />
+  <link rel="apple-touch-icon" href="/fav.png" />
   <style>
     :root {
       color-scheme: light dark;
