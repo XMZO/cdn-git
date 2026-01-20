@@ -8,6 +8,8 @@
 
 把 `cdnjs`、`git`、`torcherino` 三个代理服务合并为一个大项目：同一进程多端口运行 + SQLite 配置中心 + Web 面板。
 
+> ⚠️ 过时提醒：Node 版（`src/`）已进入维护模式（不再更新新功能）；后续以 Go 版（`go/`）为准。
+
 ## 项目结构
 
 ```
@@ -48,6 +50,8 @@ docker compose up -d --build
 > 注意：不要同时运行 Node 版与 Go 版（默认端口相同），否则会出现端口占用。
 
 ### Node 版（旧：src/）
+
+> 说明：Node 版不再维护新功能，仅保留旧用法与必要兼容；建议使用 Go 版。
 
 ```bash
 cp .env.example .env
