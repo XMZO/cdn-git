@@ -26,6 +26,7 @@ Then open:
 
 - Admin panel: `http://127.0.0.1:3100`
 - Wizard: `http://127.0.0.1:3100/wizard`
+- System: `http://127.0.0.1:3100/system`
 - Cdnjs proxy: `http://127.0.0.1:3001`
 - Git proxy: `http://127.0.0.1:3002`
 - Torcherino proxy: `http://127.0.0.1:3000`
@@ -38,7 +39,8 @@ Then open:
 ## Notes
 
 - Config is stored in SQLite (`HAZUKI_DB_PATH`, default: `data/hazuki.db` relative to your working dir).
+- Config changes apply immediately (hot reload). Port changes require a process restart.
 - `HAZUKI_MASTER_KEY` enables at-rest encryption for secrets already stored as `enc:v1:...`.
 - `cdnjs` cache TTL is suffix-based (compatible with the Node defaults) and can be overridden in the admin panel (`Default TTL` + `TTL Overrides`).
-- Admin panel features: `wizard`, `torcherino/cdnjs/git` configs, `versions` rollback, `export/import` backup, `account` password change.
+- Admin panel features: `wizard`, `system` status (services + Redis), `torcherino/cdnjs/git` configs, `versions` rollback, `export/import` backup, `account` password change.
 - Redis is optional but recommended for `cdnjs` caching. If you run without Docker, set `REDIS_HOST=127.0.0.1` (or change it in the web panel) and make sure Redis is running.

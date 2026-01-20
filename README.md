@@ -1,5 +1,9 @@
 # Hazuki Proxy Suite
 
+<p align="center">
+  <img src="./avatar.png" alt="Hazuki" width="160" />
+</p>
+
 把 `cdnjs`、`git`、`torcherino` 三个代理服务合并为一个大项目：同一进程多端口运行 + SQLite 配置中心 + Web 面板。
 
 ## 项目结构
@@ -9,12 +13,12 @@
 ├── git/          # GitHub Raw 文件代理（独立版本）
 ├── go/           # Go 重写（推荐）
 ├── torcherino/   # 通用反向代理（独立版本）
-└── src/          # Hazuki 主进程
+└── src/          # Hazuki 主进程（Node 版）
 ```
 
 ## Go 重写（推荐）
 
-见 `go/README.md`（已实现：`admin` + `torcherino` + `cdnjs` + `git` + Web 面板完整配置 + `wizard` + `versions` + `export/import` + `account`）。
+见 `go/README.md`（已实现：`admin` + `torcherino` + `cdnjs` + `git` + Web 面板完整配置 + `wizard` + `system` + `versions` + `export/import` + `account`；并支持服务/Redis 状态检测与配置热更新）。
 
 ## 端口（默认）
 
@@ -37,6 +41,9 @@ docker compose up -d --build
 ```
 
 启动后：打开 `http://你的服务器:3100` 登录并配置（推荐先用“快速向导”）。
+面板常用：`/wizard`（快速向导）、`/system`（状态 & Redis）。
+
+> 注意：不要同时运行 Node 版与 Go 版（默认端口相同），否则会出现端口占用。
 
 ### Node 版（旧：src/）
 
@@ -75,7 +82,7 @@ go run ./cmd/hazuki
 
 ## 服务说明
 
-### cdnjs - jsDelivr CDN 缓存
+### cdnjs（模块名：cdnjs）- jsDelivr CDN 缓存
 
 代理 jsDelivr CDN，使用 Redis 缓存静态资源。
 
@@ -128,6 +135,7 @@ go run ./cmd/hazuki
 
 ## 健康检查
 
+- admin：`http://HOST:3100/_hazuki/health`
 - torcherino：`http://HOST:3000/_hazuki/health`
 - cdnjs：`http://HOST:3001/_hazuki/health`
 - git：`http://HOST:3002/_hazuki/health`
