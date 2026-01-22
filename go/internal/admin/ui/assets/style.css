@@ -536,6 +536,23 @@ body.hz-modal-open {
   font-weight: 900;
 }
 
+.field .hz-check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.field .hz-check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.field .hz-check-label {
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .field .hint {
   color: var(--muted);
   font-size: 13px;

@@ -25,6 +25,7 @@ func init() {
 		"error.loginFailed":         "登录失败",
 		"error.jsonInvalid":         "JSON 格式错误",
 		"error.configInvalid":       "配置不合法",
+		"error.importSecretsDecryptFailed": "导入失败：备份包含加密字段（enc:v1），但无法解密。失败字段：%s。请确认 HAZUKI_MASTER_KEY 与导出时一致；如果你迁移/重建了数据库，请用原 hazuki.db 重新导出（新版备份会包含 kdfSaltB64），或直接迁移 hazuki.db；也可以勾选“清空加密字段”继续导入。",
 		"error.portRange":           "端口必须是 1-65535 的整数",
 		"error.portRequired":        "端口不能为空",
 
@@ -154,9 +155,11 @@ func init() {
 
 		"import.subtitle":       "粘贴",
 		"import.configJson":     "Config JSON",
+		"import.clearSecretsOnFail": "无法解密时清空加密字段并继续导入（需要重新填写 Token / Secret）",
 		"import.confirm":        "确定导入这份配置？导入后会立即生效，并保存为新版本。",
 		"import.importAndSave":  "导入并保存为新版本",
 		"import.backToVersions": "返回版本列表",
+		"import.noticeSecretsCleared": "注意：部分加密字段无法解密，已在导入时清空，请重新填写 Token / Secret。",
 
 		"versions.subtitle":       "每次保存配置都会写入一条版本记录（SQLite）。可导出/导入 JSON 备份。",
 		"versions.history":        "历史版本",
@@ -499,6 +502,7 @@ func init() {
 		"error.loginFailed":         "Sign in failed",
 		"error.jsonInvalid":         "Invalid JSON",
 		"error.configInvalid":       "Invalid config",
+		"error.importSecretsDecryptFailed": "Import failed: encrypted secrets (enc:v1) could not be decrypted. Failed fields: %s. Ensure HAZUKI_MASTER_KEY matches the export. If you migrated/recreated the DB, re-export from the original hazuki.db (new backups include kdfSaltB64) or migrate hazuki.db. Or tick “Clear encrypted secrets” to continue.",
 		"error.portRange":           "Port must be an integer from 1 to 65535",
 		"error.portRequired":        "Port is required",
 
@@ -628,9 +632,11 @@ func init() {
 
 		"import.subtitle":       "Paste the JSON exported from",
 		"import.configJson":     "Config JSON",
+		"import.clearSecretsOnFail": "If decrypt fails, clear encrypted secrets and continue (you'll need to re-enter tokens/secrets).",
 		"import.confirm":        "Import this config? Changes apply immediately and will be saved as a new version.",
 		"import.importAndSave":  "Import and save as a new version",
 		"import.backToVersions": "Back to versions",
+		"import.noticeSecretsCleared": "Warning: some encrypted secrets could not be decrypted and were cleared during import. Please re-enter tokens/secrets.",
 
 		"versions.subtitle":       "Each save writes a version record (SQLite). You can export/import JSON backups.",
 		"versions.history":        "History",

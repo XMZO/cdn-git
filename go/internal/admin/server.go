@@ -2154,6 +2154,14 @@ func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("ok") != "" {
 		notice = s.t(r, "common.applied")
 	}
+	if r.URL.Query().Get("warn") == "secretsCleared" {
+		msg := s.t(r, "import.noticeSecretsCleared")
+		if notice != "" {
+			notice = notice + " " + msg
+		} else {
+			notice = msg
+		}
+	}
 	s.render(w, r, versionsData{
 		layoutData: layoutData{
 			Title:        title,
@@ -2218,6 +2226,12 @@ func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	kdfSaltB64, err := storage.GetKdfSaltB64(s.db)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+
 	ts := time.Now().UTC().Format("20060102-150405Z")
 	filename := fmt.Sprintf("hazuki-config-%s.json", ts)
 
@@ -2226,7 +2240,14 @@ func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
 		"content-disposition",
 		fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", filename, url.PathEscape(filename)),
 	)
-	enc, _ := json.MarshalIndent(encrypted, "", "  ")
+	payload := struct {
+		model.AppConfig
+		KdfSaltB64 string `json:"kdfSaltB64,omitempty"`
+	}{
+		AppConfig:  encrypted,
+		KdfSaltB64: kdfSaltB64,
+	}
+	enc, _ := json.MarshalIndent(payload, "", "  ")
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		return
@@ -2269,8 +2290,15 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	raw := r.FormValue("configJson")
-	var parsed model.AppConfig
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+	allowClearSecrets := strings.TrimSpace(r.FormValue("clearSecretsOnFail")) != ""
+
+	type importPayload struct {
+		model.AppConfig
+		KdfSaltB64 string `json:"kdfSaltB64,omitempty"`
+	}
+
+	var payload importPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
 				Title:        title,
@@ -2283,6 +2311,7 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	parsed := payload.AppConfig
 	if err := parsed.Validate(); err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
@@ -2297,12 +2326,27 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	parsed2, clearedSecrets, err := normalizeImportedSecrets(parsed, payload.KdfSaltB64, allowClearSecrets, s.db)
+	if err != nil {
+		s.render(w, r, importData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "import",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.errText(r, err),
+			},
+			ConfigJSON: raw,
+		})
+		return
+	}
+
 	userID := st.User.ID
 	if err := s.config.Update(storage.UpdateRequest{
 		UserID: &userID,
 		Note:   "import",
 		Updater: func(_ model.AppConfig) (model.AppConfig, error) {
-			return parsed, nil
+			return parsed2, nil
 		},
 	}); err != nil {
 		s.render(w, r, importData{
@@ -2318,7 +2362,112 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/config/versions?ok=1", http.StatusFound)
+	redirectTo := "/config/versions?ok=1"
+	if len(clearedSecrets) > 0 {
+		redirectTo += "&warn=secretsCleared"
+	}
+	http.Redirect(w, r, redirectTo, http.StatusFound)
+}
+
+func normalizeImportedSecrets(cfg model.AppConfig, backupKdfSaltB64 string, allowClear bool, db *sql.DB) (model.AppConfig, []string, error) {
+	out := cfg
+
+	masterKey := os.Getenv("HAZUKI_MASTER_KEY")
+	curCrypto, err := storage.NewCryptoContext(db, masterKey)
+	if err != nil {
+		return model.AppConfig{}, nil, err
+	}
+
+	var backupCrypto *storage.CryptoContext
+	if strings.TrimSpace(backupKdfSaltB64) != "" {
+		backupCrypto, err = storage.NewCryptoContextFromSalt(masterKey, backupKdfSaltB64)
+		if err != nil {
+			return model.AppConfig{}, nil, err
+		}
+	}
+
+	cleared := make([]string, 0)
+	failed := make([]string, 0)
+
+	decryptOrNormalizeSecret := func(path string, v string) (string, bool, error) {
+		raw := strings.TrimSpace(v)
+		if raw == "" {
+			return "", false, nil
+		}
+		if raw == "__SET__" {
+			return "", false, nil
+		}
+		if !strings.HasPrefix(raw, "enc:v1:") {
+			return raw, false, nil
+		}
+
+		dec, err := curCrypto.DecryptString(raw)
+		if err == nil {
+			return dec, false, nil
+		}
+
+		if backupCrypto != nil {
+			dec2, err2 := backupCrypto.DecryptString(raw)
+			if err2 == nil {
+				return dec2, false, nil
+			}
+			err = err2
+		}
+
+		if allowClear {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+
+	handle := func(path string, p *string) {
+		if p == nil {
+			return
+		}
+		next, didClear, err := decryptOrNormalizeSecret(path, *p)
+		if err != nil {
+			failed = append(failed, path)
+			return
+		}
+		*p = next
+		if didClear {
+			cleared = append(cleared, path)
+		}
+	}
+
+	handle("git.githubToken", &out.Git.GithubToken)
+	for i := range out.GitInstances {
+		id := strings.TrimSpace(out.GitInstances[i].ID)
+		path := fmt.Sprintf("gitInstances.%s.git.githubToken", id)
+		handle(path, &out.GitInstances[i].Git.GithubToken)
+	}
+	handle("torcherino.workerSecretKey", &out.Torcherino.WorkerSecretKey)
+
+	if out.Torcherino.WorkerSecretHeaderMap != nil {
+		keys := make([]string, 0, len(out.Torcherino.WorkerSecretHeaderMap))
+		for k := range out.Torcherino.WorkerSecretHeaderMap {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			v := out.Torcherino.WorkerSecretHeaderMap[k]
+			path := fmt.Sprintf("torcherino.workerSecretHeaderMap.%s", k)
+			next, didClear, err := decryptOrNormalizeSecret(path, v)
+			if err != nil {
+				failed = append(failed, path)
+				continue
+			}
+			out.Torcherino.WorkerSecretHeaderMap[k] = next
+			if didClear {
+				cleared = append(cleared, path)
+			}
+		}
+	}
+
+	if len(failed) > 0 {
+		return model.AppConfig{}, nil, errI18n("error.importSecretsDecryptFailed", strings.Join(failed, ", "))
+	}
+	return out, cleared, nil
 }
 
 func (s *server) wizard(w http.ResponseWriter, r *http.Request) {

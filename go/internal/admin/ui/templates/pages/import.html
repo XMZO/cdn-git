@@ -2,7 +2,7 @@
   <div class="grid">
     <div class="card">
       <h2>{{.Title}}</h2>
-      <div class="muted small">{{.T "import.subtitle"}} <code>/config/export</code>（ports/cdnjs/git/torcherino；enc:v1）。</div>
+      <div class="muted small">{{.T "import.subtitle"}} <code>/config/export</code>（ports/cdnjs/git/torcherino；enc:v1；kdfSaltB64）。</div>
     </div>
 
     <form class="form" method="post" action="/config/import">
@@ -10,6 +10,10 @@
         <div class="field">
           <label>{{.T "import.configJson"}}</label>
           <textarea name="configJson" placeholder="{...}">{{.ConfigJSON}}</textarea>
+          <div class="hint hz-check-row">
+            <input id="hz-clear-secrets" type="checkbox" name="clearSecretsOnFail" value="1" />
+            <label for="hz-clear-secrets" class="hz-check-label">{{.T "import.clearSecretsOnFail"}}</label>
+          </div>
         </div>
         <div class="btn-row">
           <button class="btn primary" type="submit" onclick="return confirm({{printf "%q" (.T "import.confirm")}});">{{.T "import.importAndSave"}}</button>

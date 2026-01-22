@@ -18,6 +18,8 @@ const (
 	encPrefix      = "enc:v1:"
 )
 
+var ErrDecryptAuthFailed = errors.New("decrypt: message authentication failed")
+
 type CryptoContext struct {
 	Enabled bool
 	key     []byte
@@ -45,6 +47,27 @@ func NewCryptoContext(db *sql.DB, masterKey string) (*CryptoContext, error) {
 	}
 
 	return &CryptoContext{Enabled: true, key: key}, nil
+}
+
+func NewCryptoContextFromSalt(masterKey, saltB64 string) (*CryptoContext, error) {
+	if strings.TrimSpace(masterKey) == "" {
+		return &CryptoContext{Enabled: false}, nil
+	}
+	salt, err := base64.StdEncoding.DecodeString(strings.TrimSpace(saltB64))
+	if err != nil {
+		return nil, err
+	}
+
+	// Node crypto.scryptSync defaults: N=16384, r=8, p=1.
+	key, err := scrypt.Key([]byte(masterKey), salt, 16384, 8, 1, 32)
+	if err != nil {
+		return nil, err
+	}
+	return &CryptoContext{Enabled: true, key: key}, nil
+}
+
+func GetKdfSaltB64(db *sql.DB) (string, error) {
+	return ensureKdfSalt(db)
 }
 
 func (c *CryptoContext) EncryptString(plaintext string) (string, error) {
@@ -123,6 +146,9 @@ func (c *CryptoContext) DecryptString(value string) (string, error) {
 
 	plaintext, err := gcm.Open(nil, iv, ctWithTag, nil)
 	if err != nil {
+		if strings.Contains(err.Error(), "message authentication failed") {
+			return "", errors.Join(ErrDecryptAuthFailed, err)
+		}
 		return "", err
 	}
 	return string(plaintext), nil
