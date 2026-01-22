@@ -95,6 +95,78 @@
       </div>
     </div>
 
+    <div class="grid cols-2">
+      <div class="card" id="hz-traffic-card">
+        <h3>{{.T "dashboard.trafficTitle"}}</h3>
+        <div class="muted small">{{.T "dashboard.trafficHint"}}</div>
+
+        <div class="table-wrap" style="margin-top:12px;">
+          <table class="table" aria-label="{{.T "dashboard.trafficTitle"}}">
+            <thead>
+              <tr>
+                <th>{{.T "dashboard.traffic.service"}}</th>
+                <th>{{.T "dashboard.traffic.downTotal"}}</th>
+                <th>{{.T "dashboard.traffic.upTotal"}}</th>
+                <th>{{.T "dashboard.traffic.downNow"}}</th>
+                <th>{{.T "dashboard.traffic.upNow"}}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-hz-svc="torcherino">
+                <td>Torcherino</td>
+                <td><code data-hz-field="downTotal">-</code></td>
+                <td><code data-hz-field="upTotal">-</code></td>
+                <td><code data-hz-field="downRate">-</code></td>
+                <td><code data-hz-field="upRate">-</code></td>
+              </tr>
+              <tr data-hz-svc="cdnjs">
+                <td>{{.T "nav.cdnjs"}}</td>
+                <td><code data-hz-field="downTotal">-</code></td>
+                <td><code data-hz-field="upTotal">-</code></td>
+                <td><code data-hz-field="downRate">-</code></td>
+                <td><code data-hz-field="upRate">-</code></td>
+              </tr>
+              <tr data-hz-svc="git">
+                <td>{{.T "nav.git"}}</td>
+                <td><code data-hz-field="downTotal">-</code></td>
+                <td><code data-hz-field="upTotal">-</code></td>
+                <td><code data-hz-field="downRate">-</code></td>
+                <td><code data-hz-field="upRate">-</code></td>
+              </tr>
+              <tr data-hz-svc="total">
+                <td><strong>{{.T "dashboard.traffic.total"}}</strong></td>
+                <td><code data-hz-field="downTotal">-</code></td>
+                <td><code data-hz-field="upTotal">-</code></td>
+                <td><code data-hz-field="downRate">-</code></td>
+                <td><code data-hz-field="upRate">-</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="hz-redis-card">
+        <h3>{{.T "dashboard.redisCacheTitle"}}</h3>
+        <div class="muted small">{{.T "dashboard.redisCacheHint"}}</div>
+        <div style="margin-top:10px;">
+          <span class="pill" id="hz-redis-pill" data-hz-redis-status="unknown">-</span>
+        </div>
+
+        <div class="kvs" style="margin-top:12px;">
+          <div class="muted">{{.T "dashboard.redis.keys"}}</div>
+          <div><code data-hz-redis-field="dbSize">-</code></div>
+          <div class="muted">{{.T "dashboard.redis.usedMemory"}}</div>
+          <div><code data-hz-redis-field="usedMemoryHuman">-</code></div>
+          <div class="muted">{{.T "dashboard.redis.hits"}}</div>
+          <div><code data-hz-redis-field="keyspaceHits">-</code></div>
+          <div class="muted">{{.T "dashboard.redis.misses"}}</div>
+          <div><code data-hz-redis-field="keyspaceMisses">-</code></div>
+          <div class="muted">{{.T "dashboard.redis.hitRate"}}</div>
+          <div><code data-hz-redis-field="hitRate">-</code></div>
+        </div>
+      </div>
+    </div>
+
     {{if .Warnings}}
       <div class="card">
         <h3>{{.T "dashboard.warningsTitle"}}</h3>

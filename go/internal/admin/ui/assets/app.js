@@ -50,6 +50,238 @@
     ]);
   };
 
+  const toInt = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.trunc(n);
+  };
+
+  const formatBytes = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return "-";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let val = n;
+    let idx = 0;
+    while (val >= 1024 && idx < units.length - 1) {
+      val /= 1024;
+      idx += 1;
+    }
+    const digits = idx === 0 ? 0 : val >= 100 ? 0 : val >= 10 ? 1 : 2;
+    return val.toFixed(digits) + " " + units[idx];
+  };
+
+  const formatBps = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return "-";
+    return formatBytes(n) + "/s";
+  };
+
+  let dashTimer = null;
+  let dashPrevAgg = null;
+  let dashPrevAt = 0;
+  let dashAbort = null;
+  let dashSeq = 0;
+
+  const stopDashboardStats = () => {
+    if (dashTimer) {
+      clearInterval(dashTimer);
+      dashTimer = null;
+    }
+    dashPrevAgg = null;
+    dashPrevAt = 0;
+
+    if (dashAbort && typeof dashAbort.abort === "function") {
+      try {
+        dashAbort.abort();
+      } catch {
+        // ignore
+      }
+    }
+    dashAbort = null;
+  };
+
+  const snapFrom = (v) => {
+    const obj = v && typeof v === "object" ? v : {};
+    return {
+      bytesIn: toInt(obj.bytesIn),
+      bytesOut: toInt(obj.bytesOut),
+      requests: toInt(obj.requests),
+    };
+  };
+
+  const sumSnaps = (a, b) => ({
+    bytesIn: toInt((a && a.bytesIn) || 0) + toInt((b && b.bytesIn) || 0),
+    bytesOut: toInt((a && a.bytesOut) || 0) + toInt((b && b.bytesOut) || 0),
+    requests: toInt((a && a.requests) || 0) + toInt((b && b.requests) || 0),
+  });
+
+  const aggregateServices = (services) => {
+    const map = services && typeof services === "object" ? services : {};
+
+    const torcherino = snapFrom(map.torcherino);
+    const cdnjs = snapFrom(map.cdnjs);
+
+    let git = { bytesIn: 0, bytesOut: 0, requests: 0 };
+    for (const [k, val] of Object.entries(map)) {
+      if (k === "git" || k.startsWith("git:")) {
+        git = sumSnaps(git, snapFrom(val));
+      }
+    }
+
+    const total = sumSnaps(sumSnaps(torcherino, cdnjs), git);
+
+    return {
+      torcherino,
+      cdnjs,
+      git,
+      total,
+    };
+  };
+
+  const updateTrafficDom = (agg, prev, dt) => {
+    const card = qs("#hz-traffic-card");
+    if (!card) return;
+
+    for (const row of qsa("tr[data-hz-svc]", card)) {
+      const key = (row.getAttribute("data-hz-svc") || "").trim();
+      const cur = (agg && agg[key]) || { bytesIn: 0, bytesOut: 0, requests: 0 };
+      const pre = prev && prev[key];
+
+      const downTotal = formatBytes(cur.bytesOut);
+      const upTotal = formatBytes(cur.bytesIn);
+
+      let downRate = "-";
+      let upRate = "-";
+      if (pre && dt > 0) {
+        const dOut = Math.max(0, toInt(cur.bytesOut) - toInt(pre.bytesOut));
+        const dIn = Math.max(0, toInt(cur.bytesIn) - toInt(pre.bytesIn));
+        downRate = formatBps(dOut / dt);
+        upRate = formatBps(dIn / dt);
+      }
+
+      for (const el of qsa("[data-hz-field]", row)) {
+        const f = (el.getAttribute("data-hz-field") || "").trim();
+        if (!f) continue;
+        if (f === "downTotal") el.textContent = downTotal;
+        else if (f === "upTotal") el.textContent = upTotal;
+        else if (f === "downRate") el.textContent = downRate;
+        else if (f === "upRate") el.textContent = upRate;
+      }
+    }
+  };
+
+  const updateRedisDom = (redis) => {
+    const card = qs("#hz-redis-card");
+    if (!card) return;
+
+    const pill = qs("#hz-redis-pill", card);
+    if (pill) {
+      pill.classList.remove("ok", "err");
+      const status = (redis && redis.status ? String(redis.status) : "").toLowerCase();
+
+      if (status === "ok") {
+        pill.classList.add("ok");
+        const latency = toInt(redis.latencyMS);
+        const addr = (redis.addr || "").toString();
+        pill.textContent = tKey("redis.ok", "Redis OK") + " · " + latency + "ms" + (addr ? " · " + addr : "");
+      } else if (status === "error") {
+        pill.classList.add("err");
+        const addr = (redis.addr || "").toString();
+        pill.textContent = tKey("redis.error", "Redis error") + (addr ? " · " + addr : "");
+      } else {
+        pill.textContent = tKey("redis.notConfigured", "Redis not configured");
+      }
+    }
+
+    const hits = toInt(redis && redis.keyspaceHits);
+    const misses = toInt(redis && redis.keyspaceMisses);
+    const total = hits + misses;
+    const hitRate = total > 0 ? ((hits / total) * 100).toFixed(1) + "%" : "-";
+
+    for (const el of qsa("[data-hz-redis-field]", card)) {
+      const f = (el.getAttribute("data-hz-redis-field") || "").trim();
+      if (!f) continue;
+
+      if (f === "dbSize") el.textContent = String(toInt(redis && redis.dbSize));
+      else if (f === "usedMemoryHuman") el.textContent = (redis && redis.usedMemoryHuman ? String(redis.usedMemoryHuman) : "-");
+      else if (f === "keyspaceHits") el.textContent = String(hits);
+      else if (f === "keyspaceMisses") el.textContent = String(misses);
+      else if (f === "hitRate") el.textContent = hitRate;
+    }
+  };
+
+  const pollDashboardStats = async () => {
+    const page = (document.body && document.body.getAttribute("data-page")) || "";
+    if (page !== "dashboard") {
+      stopDashboardStats();
+      return;
+    }
+
+    const mySeq = (dashSeq += 1);
+    if (dashAbort && typeof dashAbort.abort === "function") {
+      try {
+        dashAbort.abort();
+      } catch {
+        // ignore
+      }
+    }
+
+    let signal = null;
+    if (typeof AbortController === "function") {
+      dashAbort = new AbortController();
+      signal = dashAbort.signal;
+    } else {
+      dashAbort = null;
+    }
+
+    try {
+      const opts = { method: "GET", headers: { Accept: "application/json" }, credentials: "same-origin" };
+      if (signal) opts.signal = signal;
+
+      const resp = await fetch("/_hazuki/stats", opts);
+      if (mySeq !== dashSeq) return;
+
+      const ct = (resp.headers.get("content-type") || "").toLowerCase();
+      if (!resp.ok || !ct.includes("application/json")) {
+        return;
+      }
+
+      const payload = await resp.json();
+      if (mySeq !== dashSeq) return;
+
+      const nowAt = performance && typeof performance.now === "function" ? performance.now() : Date.now();
+      const dt = dashPrevAt > 0 ? Math.max(0.001, (nowAt - dashPrevAt) / 1000) : 0;
+
+      const services = payload && payload.services ? payload.services : {};
+      const canon = aggregateServices(services);
+
+      updateTrafficDom(canon, dashPrevAgg, dt);
+
+      updateRedisDom(payload && payload.redis ? payload.redis : null);
+
+      dashPrevAgg = canon;
+      dashPrevAt = nowAt;
+    } catch {
+      if (dashAbort && dashAbort.signal && dashAbort.signal.aborted) {
+        return;
+      }
+    }
+  };
+
+  const ensureDashboardStats = () => {
+    const page = (document.body && document.body.getAttribute("data-page")) || "";
+    if (page !== "dashboard") {
+      stopDashboardStats();
+      return;
+    }
+
+    if (dashTimer) return;
+    dashPrevAgg = null;
+    dashPrevAt = 0;
+    pollDashboardStats();
+    dashTimer = setInterval(pollDashboardStats, 2000);
+  };
+
   const formatJson = (ta, msgEl) => {
     if (!ta) return;
     const raw = (ta.value || "").trim();
@@ -526,6 +758,7 @@
     updateGitPreview();
     updateCdnjsPreview();
     updateTorcherinoPreview();
+    ensureDashboardStats();
   };
 
   const updateNavActive = (pathname) => {

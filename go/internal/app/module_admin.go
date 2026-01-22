@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hazuki-go/internal/admin"
+	"hazuki-go/internal/metrics"
 )
 
 type adminModule struct{}
@@ -19,10 +20,13 @@ func (adminModule) Start(_ context.Context, env *runtimeEnv, fatalErrCh chan<- e
 		Config:     env.config,
 		Port:       env.initialCfg.Ports.Admin,
 		SessionTTL: env.sessionTTL,
+		Metrics:    env.metrics,
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	handler = metrics.Wrap(env.metrics.Service("admin"), handler)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", env.initialCfg.Ports.Admin),

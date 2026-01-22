@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/gitproxy"
 )
@@ -67,11 +68,23 @@ func (gitModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) (*r
 			return
 		}
 
+		metricsKey := "git"
+		if inst.key != "default" {
+			id := strings.TrimPrefix(inst.key, "inst:")
+			id = strings.ToLower(strings.TrimSpace(id))
+			if id != "" {
+				metricsKey = "git:" + id
+			}
+		}
+
+		h := gitproxy.NewDynamicHandler(func() gitproxy.RuntimeConfig {
+			return inst.runtime.Load().(gitproxy.RuntimeConfig)
+		})
+		h = metrics.Wrap(env.metrics.Service(metricsKey), h)
+
 		server := &http.Server{
-			Addr: fmt.Sprintf("0.0.0.0:%d", port),
-			Handler: gitproxy.NewDynamicHandler(func() gitproxy.RuntimeConfig {
-				return inst.runtime.Load().(gitproxy.RuntimeConfig)
-			}),
+			Addr:              fmt.Sprintf("0.0.0.0:%d", port),
+			Handler:           h,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 

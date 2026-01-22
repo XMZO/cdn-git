@@ -10,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/storage"
 )
 
@@ -60,6 +61,7 @@ func Run(ctx context.Context) error {
 		config:     configStore,
 		initialCfg: appCfg,
 		sessionTTL: sessionTTL,
+		metrics:    metrics.NewRegistry(),
 	}
 
 	fatalErrCh := make(chan error, 1)

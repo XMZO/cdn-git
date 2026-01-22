@@ -23,6 +23,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"hazuki-go/internal/i18n"
+	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/cdnjsproxy"
 	"hazuki-go/internal/storage"
@@ -36,6 +37,7 @@ type Options struct {
 	Config     *storage.ConfigStore
 	Port       int
 	SessionTTL int
+	Metrics    *metrics.Registry
 }
 
 type server struct {
@@ -44,6 +46,7 @@ type server struct {
 	port       int
 	sessionTTL int
 	startedAt  time.Time
+	metrics    *metrics.Registry
 }
 
 type reqState struct {
@@ -228,16 +231,19 @@ type wizardData struct {
 }
 
 type redisStatus struct {
-	Addr      string
-	Status    string // ok | error | disabled
-	LatencyMS int64
-	Error     string
+	Addr      string `json:"addr"`
+	Status    string `json:"status"` // ok | error | disabled
+	LatencyMS int64  `json:"latencyMS"`
+	Error     string `json:"error,omitempty"`
 
-	ServerVersion    string
-	UptimeSeconds    int64
-	ConnectedClients int64
-	UsedMemoryHuman  string
-	DBSize           int64
+	ServerVersion    string `json:"serverVersion,omitempty"`
+	UptimeSeconds    int64  `json:"uptimeSeconds,omitempty"`
+	ConnectedClients int64  `json:"connectedClients,omitempty"`
+	UsedMemoryHuman  string `json:"usedMemoryHuman,omitempty"`
+	DBSize           int64  `json:"dbSize,omitempty"`
+
+	KeyspaceHits   int64 `json:"keyspaceHits,omitempty"`
+	KeyspaceMisses int64 `json:"keyspaceMisses,omitempty"`
 }
 
 type serviceStatus struct {
@@ -269,6 +275,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 		port:       opts.Port,
 		sessionTTL: opts.SessionTTL,
 		startedAt:  time.Now(),
+		metrics:    opts.Metrics,
 	}
 
 	// Best-effort cleanup.
@@ -280,6 +287,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.Handle("/fav.png", http.RedirectHandler("/assets/fav.png", http.StatusFound))
 	mux.HandleFunc("/_hazuki/health", s.wrap(s.health))
 	mux.HandleFunc("/_hazuki/health/", s.wrap(s.healthSub))
+	mux.HandleFunc("/_hazuki/stats", s.wrapRequireAuth(s.stats))
 	mux.HandleFunc("/setup", s.wrap(s.setup))
 	mux.HandleFunc("/login", s.wrap(s.login))
 	mux.HandleFunc("/lang", s.wrap(s.setLang))
@@ -577,6 +585,44 @@ func (s *server) healthSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = io.Copy(w, io.LimitReader(resp.Body, 256<<10))
+}
+
+func (s *server) stats(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		// continue
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	services := map[string]metrics.Snapshot{}
+	if s.metrics != nil {
+		services = s.metrics.Snapshot()
+	}
+
+	redisSt := redisStatus{Status: "disabled"}
+	if cfg, err := s.config.GetDecryptedConfig(); err == nil {
+		redisSt = checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	} else {
+		redisSt = redisStatus{Status: "error", Error: err.Error()}
+	}
+
+	payload := map[string]any{
+		"ok":       true,
+		"time":     time.Now().UTC().Format(time.RFC3339Nano),
+		"services": services,
+		"redis":    redisSt,
+	}
+	b, _ := json.Marshal(payload)
+
+	w.Header().Set("content-type", "application/json; charset=utf-8")
+	w.Header().Set("cache-control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(b)
 }
 
 func (s *server) setup(w http.ResponseWriter, r *http.Request) {
@@ -2616,7 +2662,7 @@ func checkRedisStatus(ctx context.Context, host string, port int) redisStatus {
 
 	infoCtx, cancel := context.WithTimeout(ctx, 450*time.Millisecond)
 	defer cancel()
-	infoStr, err := client.Info(infoCtx, "server", "clients", "memory").Result()
+	infoStr, err := client.Info(infoCtx, "server", "clients", "memory", "stats").Result()
 	if err == nil && strings.TrimSpace(infoStr) != "" {
 		for _, line := range strings.Split(infoStr, "\n") {
 			l := strings.TrimSpace(line)
@@ -2642,6 +2688,14 @@ func checkRedisStatus(ctx context.Context, host string, port int) redisStatus {
 				}
 			case "used_memory_human":
 				st.UsedMemoryHuman = val
+			case "keyspace_hits":
+				if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+					st.KeyspaceHits = n
+				}
+			case "keyspace_misses":
+				if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+					st.KeyspaceMisses = n
+				}
 			}
 		}
 	}

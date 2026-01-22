@@ -12,6 +12,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/cdnjsproxy"
 )
@@ -58,7 +59,7 @@ func (m cdnjsModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error)
 
 		srv := &http.Server{
 			Addr: fmt.Sprintf("0.0.0.0:%d", port),
-			Handler: cdnjsproxy.NewDynamicHandler(
+			Handler: metrics.Wrap(env.metrics.Service("cdnjs"), cdnjsproxy.NewDynamicHandler(
 				func() cdnjsproxy.RuntimeConfig {
 					return runtime.Load().(cdnjsproxy.RuntimeConfig)
 				},
@@ -66,7 +67,7 @@ func (m cdnjsModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error)
 					rc, _ := redisClient.Load().(*redis.Client)
 					return rc
 				},
-			),
+			)),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 

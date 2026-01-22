@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/torcherinoproxy"
 )
@@ -49,6 +50,7 @@ func (torcherinoModule) Start(_ context.Context, env *runtimeEnv, _ chan<- error
 		h := torcherinoproxy.NewDynamicHandler(func() torcherinoproxy.RuntimeConfig {
 			return runtime.Load().(torcherinoproxy.RuntimeConfig)
 		})
+		h = metrics.Wrap(env.metrics.Service("torcherino"), h)
 		srv := &http.Server{
 			Addr:              fmt.Sprintf("0.0.0.0:%d", port),
 			Handler:           h,
