@@ -738,17 +738,17 @@ func applyReplacements(text, upstreamDomain, hostName string, replaceDict map[st
 		rawValue := replaceDict[key]
 		resolvedKey := key
 		switch key {
-		case "$upstream":
+		case "$upstream", "$$upstream":
 			resolvedKey = upstreamDomain
-		case "$custom_domain":
+		case "$custom_domain", "$$custom_domain":
 			resolvedKey = hostName
 		}
 
 		resolvedValue := rawValue
 		switch rawValue {
-		case "$upstream":
+		case "$upstream", "$$upstream":
 			resolvedValue = upstreamDomain
-		case "$custom_domain":
+		case "$custom_domain", "$$custom_domain":
 			resolvedValue = hostName
 		}
 

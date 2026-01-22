@@ -158,7 +158,7 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 		if err != nil {
 			return AppConfig{}, fmt.Errorf("REPLACE_DICT: %w", err)
 		}
-		cfg.Git.ReplaceDict = m
+		cfg.Git.ReplaceDict = normalizeGitReplaceDictPlaceholders(m)
 	}
 
 	if _, ok := lookupEnv("BLOCKED_IP_ADDRESS"); ok {
@@ -173,6 +173,28 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 	cfg.Cdnjs.BlockedGhUsers = trimFilter(cfg.Cdnjs.BlockedGhUsers)
 
 	return cfg, cfg.Validate()
+}
+
+func normalizeGitReplaceDictPlaceholders(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[normalizeGitReplaceDictToken(k)] = normalizeGitReplaceDictToken(v)
+	}
+	return out
+}
+
+func normalizeGitReplaceDictToken(s string) string {
+	switch s {
+	case "$$upstream":
+		return "$upstream"
+	case "$$custom_domain":
+		return "$custom_domain"
+	default:
+		return s
+	}
 }
 
 func (c AppConfig) Validate() error {
