@@ -279,6 +279,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.Handle("/favicon.ico", http.RedirectHandler("/assets/fav.png", http.StatusFound))
 	mux.Handle("/fav.png", http.RedirectHandler("/assets/fav.png", http.StatusFound))
 	mux.HandleFunc("/_hazuki/health", s.wrap(s.health))
+	mux.HandleFunc("/_hazuki/health/", s.wrap(s.healthSub))
 	mux.HandleFunc("/setup", s.wrap(s.setup))
 	mux.HandleFunc("/login", s.wrap(s.login))
 	mux.HandleFunc("/lang", s.wrap(s.setLang))
@@ -308,7 +309,7 @@ func (s *server) wrap(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// If no users exist, force setup (except setup/health).
-		if !st.HasUsers && r.URL.Path != "/setup" && r.URL.Path != "/_hazuki/health" {
+		if !st.HasUsers && r.URL.Path != "/setup" && !strings.HasPrefix(r.URL.Path, "/_hazuki/health") {
 			http.Redirect(w, r, "/setup", http.StatusFound)
 			return
 		}
@@ -477,6 +478,105 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = w.Write(b)
+}
+
+func (s *server) healthSub(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		// continue
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sub := strings.TrimPrefix(r.URL.Path, "/_hazuki/health/")
+	sub = strings.Trim(sub, "/")
+	if sub == "" {
+		http.Redirect(w, r, "/_hazuki/health", http.StatusFound)
+		return
+	}
+
+	parts := strings.Split(sub, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	cfg, err := s.config.GetDecryptedConfig()
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+
+	service := strings.ToLower(strings.TrimSpace(parts[0]))
+	port := 0
+	switch service {
+	case "admin":
+		s.health(w, r)
+		return
+	case "torcherino":
+		port = cfg.Ports.Torcherino
+	case "cdnjs":
+		port = cfg.Ports.Cdnjs
+	case "git":
+		port = cfg.Ports.Git
+		if len(parts) >= 2 {
+			instanceID := strings.TrimSpace(parts[1])
+			if instanceID != "" && !strings.EqualFold(instanceID, "default") {
+				found := false
+				for _, it := range cfg.GitInstances {
+					if strings.EqualFold(strings.TrimSpace(it.ID), instanceID) {
+						port = it.Port
+						found = true
+						break
+					}
+				}
+				if !found {
+					http.Error(w, "Not found", http.StatusNotFound)
+					return
+				}
+			}
+		}
+	default:
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	if port < 1 || port > 65535 {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+
+	targetURL := "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) + "/_hazuki/health"
+	ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, r.Method, targetURL, nil)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Only forward a minimal safe set of headers.
+	if ct := strings.TrimSpace(resp.Header.Get("content-type")); ct != "" {
+		w.Header().Set("content-type", ct)
+	} else {
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+	}
+	w.Header().Set("cache-control", "no-store")
+	w.WriteHeader(resp.StatusCode)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 256<<10))
 }
 
 func (s *server) setup(w http.ResponseWriter, r *http.Request) {
@@ -794,7 +894,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 				Port:      it.Port,
 				Enabled:   enabled,
 				BaseURL:   baseURL,
-				HealthURL: baseURL + "/_hazuki/health",
+				HealthURL: "/_hazuki/health/git/" + url.PathEscape(id),
 				Status:    st,
 			})
 		}
@@ -812,7 +912,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		AdminURL:  adminURL,
 
 		TorcherinoURL:       torcherinoURL,
-		TorcherinoHealthURL: torcherinoURL + "/_hazuki/health",
+		TorcherinoHealthURL: "/_hazuki/health/torcherino",
 		TorcherinoStatus: func() serviceStatus {
 			if cfg.Torcherino.Disabled {
 				return disabledServiceStatus(cfg.Ports.Torcherino)
@@ -821,7 +921,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}(),
 
 		CdnjsURL:       cdnjsURL,
-		CdnjsHealthURL: cdnjsURL + "/_hazuki/health",
+		CdnjsHealthURL: "/_hazuki/health/cdnjs",
 		CdnjsStatus: func() serviceStatus {
 			if cfg.Cdnjs.Disabled {
 				return disabledServiceStatus(cfg.Ports.Cdnjs)
@@ -830,7 +930,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}(),
 
 		GitURL:       gitURL,
-		GitHealthURL: gitURL + "/_hazuki/health",
+		GitHealthURL: "/_hazuki/health/git",
 		GitStatus: func() serviceStatus {
 			if cfg.Git.Disabled {
 				return disabledServiceStatus(cfg.Ports.Git)
@@ -2221,7 +2321,7 @@ func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqSt
 			Port:      port,
 			Enabled:   enabled,
 			BaseURL:   baseURL,
-			HealthURL: baseURL + "/_hazuki/health",
+			HealthURL: "/_hazuki/health/git",
 			Status:    st,
 		}
 	}())
@@ -2256,10 +2356,15 @@ func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqSt
 				Port:      it.Port,
 				Enabled:   enabled,
 				BaseURL:   baseURL,
-				HealthURL: baseURL + "/_hazuki/health",
+				HealthURL: "/_hazuki/health/git/" + url.PathEscape(id),
 				Status:    st,
 			})
 		}
+	}
+
+	gitHealthURL := "/_hazuki/health/git"
+	if strings.TrimSpace(currentID) != "" {
+		gitHealthURL = "/_hazuki/health/git/" + url.PathEscape(strings.TrimSpace(currentID))
 	}
 
 	s.render(w, r, gitData{
@@ -2282,7 +2387,7 @@ func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqSt
 		BlockedIPsCsv:     strings.Join(currentCfg.BlockedIpAddresses, ","),
 		ReplaceDictJson:   replaceDictJSON,
 		GitBaseURL:        gitBaseURL,
-		GitHealthURL:      gitBaseURL + "/_hazuki/health",
+		GitHealthURL:      gitHealthURL,
 		GitStatus:         gitSt,
 
 		CurrentInstanceID:   currentID,
@@ -2359,7 +2464,7 @@ func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *req
 		TTLOverridesValue: ttlOverridesValue,
 		TTLEffectiveJSON:  template.JS(string(ttlPreviewJSON)),
 		CdnjsBaseURL:      cdnjsBaseURL,
-		CdnjsHealthURL:    cdnjsBaseURL + "/_hazuki/health",
+		CdnjsHealthURL:    "/_hazuki/health/cdnjs",
 		RedisStatus:       redisSt,
 		CdnjsStatus:       cdnjsSt,
 	})
@@ -2423,7 +2528,7 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 		WorkerSecretHeaderMapJSONValue: workerSecretHeaderMapJSONValue,
 
 		TorcherinoBaseURL:   baseURL,
-		TorcherinoHealthURL: baseURL + "/_hazuki/health",
+		TorcherinoHealthURL: "/_hazuki/health/torcherino",
 		TorcherinoStatus:    torcherinoSt,
 	})
 }
