@@ -2,7 +2,7 @@
   <div class="grid">
     <div class="card">
       <h2>{{.Title}}</h2>
-      <div class="muted small">{{.T "dashboard.configUpdatedAt"}}：{{.UpdatedAt}}</div>
+      <div class="muted small">{{.T "dashboard.configUpdatedAt"}}：<code data-hz-iso="{{.UpdatedAt}}">{{.UpdatedAt}}</code></div>
 
       <div class="btn-row">
         <a class="btn" href="/wizard">{{.T "nav.wizard"}}</a>

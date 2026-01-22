@@ -71,6 +71,9 @@ type layoutData struct {
 
 	Lang   string
 	JSI18n template.JS
+
+	// Admin panel display timezone. Values: auto | UTC | +HH:MM / -HH:MM
+	TimeZone string
 }
 
 type dashboardData struct {
@@ -311,6 +314,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/account", s.wrapRequireAuth(s.account))
 	mux.HandleFunc("/account/password", s.wrapRequireAuth(s.accountPassword))
 	mux.HandleFunc("/system", s.wrapRequireAuth(s.system))
+	mux.HandleFunc("/system/timezone", s.wrapRequireAuth(s.systemTimeZone))
 	mux.HandleFunc("/traffic", s.wrapRequireAuth(s.traffic))
 	mux.HandleFunc("/traffic/retention", s.wrapRequireAuth(s.trafficRetention))
 	mux.HandleFunc("/traffic/cleanup", s.wrapRequireAuth(s.trafficCleanup))
@@ -393,7 +397,8 @@ func getState(ctx context.Context) *reqState {
 func (s *server) render(w http.ResponseWriter, r *http.Request, data any) {
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	lang := s.pickLang(r)
-	data = injectI18nData(data, lang)
+	tz := s.pickTimeZone(r)
+	data = injectLayoutData(data, lang, tz)
 	_ = pageTemplates.ExecuteTemplate(w, "layout", data)
 }
 
@@ -413,6 +418,17 @@ func (s *server) pickLang(r *http.Request) string {
 	}
 
 	return i18n.NegotiateLang(r.Header.Get("Accept-Language"), i18n.LangZH)
+}
+
+func (s *server) pickTimeZone(r *http.Request) string {
+	if r == nil {
+		return "auto"
+	}
+	tz, err := storage.GetAdminTimeZone(r.Context(), s.db)
+	if err != nil {
+		return "auto"
+	}
+	return tz
 }
 
 func (s *server) t(r *http.Request, key string, args ...any) string {
@@ -448,7 +464,7 @@ func (s *server) errText(r *http.Request, err error) string {
 	return err.Error()
 }
 
-func injectI18nData(data any, lang string) any {
+func injectLayoutData(data any, lang string, tz string) any {
 	if data == nil {
 		return data
 	}
@@ -468,6 +484,9 @@ func injectI18nData(data any, lang string) any {
 				f.Set(reflect.ValueOf(template.JS(string(jsBytes))))
 			}
 		}
+		if f := v.Elem().FieldByName("TimeZone"); f.IsValid() && f.CanSet() && f.Kind() == reflect.String {
+			f.SetString(tz)
+		}
 		return data
 	}
 
@@ -482,6 +501,9 @@ func injectI18nData(data any, lang string) any {
 			if f.Type() == reflect.TypeOf(template.JS("")) {
 				f.Set(reflect.ValueOf(template.JS(string(jsBytes))))
 			}
+		}
+		if f := p.Elem().FieldByName("TimeZone"); f.IsValid() && f.CanSet() && f.Kind() == reflect.String {
+			f.SetString(tz)
 		}
 		return p.Interface()
 	}
@@ -1020,6 +1042,15 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
 	title := s.t(r, "page.system.title")
 
+	notice := ""
+	if r.Method == http.MethodGet && r.URL.Query().Get("ok") != "" {
+		notice = s.t(r, "common.saved")
+	}
+	errMsg := ""
+	if r.Method == http.MethodGet && r.URL.Query().Get("err") == "timezone" {
+		errMsg = s.t(r, "error.timeZoneInvalid")
+	}
+
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
 		s.render(w, r, systemData{
@@ -1062,6 +1093,8 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 			BodyTemplate: "system",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
+			Notice:       notice,
+			Error:        errMsg,
 		},
 
 		GoVersion:         runtime.Version(),
@@ -1104,6 +1137,28 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 
 		Redis: checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port),
 	})
+}
+
+func (s *server) systemTimeZone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	spec, ok := normalizeAdminTimeZoneSpec(r.FormValue("timeZone"))
+	if !ok {
+		http.Redirect(w, r, "/system?err=timezone", http.StatusFound)
+		return
+	}
+	if err := storage.SetAdminTimeZone(r.Context(), s.db, spec); err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, "/system?ok=1", http.StatusFound)
 }
 
 func (s *server) traffic(w http.ResponseWriter, r *http.Request) {
@@ -3435,6 +3490,31 @@ func noteIfEmpty(note, fallback string) string {
 		return fallback
 	}
 	return note
+}
+
+func normalizeAdminTimeZoneSpec(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "auto", true
+	}
+	sl := strings.ToLower(s)
+	switch sl {
+	case "auto", "browser", "local":
+		return "auto", true
+	case "utc", "z":
+		return "UTC", true
+	}
+
+	if off, ok := storage.ParseTimeZoneOffsetMinutes(s); ok {
+		if off == 0 {
+			return "UTC", true
+		}
+		if spec, ok := storage.FormatTimeZoneOffsetMinutes(off); ok {
+			return spec, true
+		}
+	}
+
+	return "", false
 }
 
 func parsePort(value string, fallback int) (int, error) {

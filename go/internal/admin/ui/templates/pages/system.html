@@ -10,9 +10,9 @@
         <h3>{{.T "system.runtimeTitle"}}</h3>
         <div class="kvs">
           <div class="muted">{{.T "system.now"}}</div>
-          <div><code>{{.Now}}</code></div>
+          <div><code data-hz-iso="{{.Now}}">{{.Now}}</code></div>
           <div class="muted">{{.T "system.startedAt"}}</div>
-          <div><code>{{.StartedAt}}</code></div>
+          <div><code data-hz-iso="{{.StartedAt}}">{{.StartedAt}}</code></div>
           <div class="muted">{{.T "system.uptime"}}</div>
           <div><code>{{.Uptime}}</code></div>
           <div class="muted">{{.T "system.go"}}</div>
@@ -28,7 +28,7 @@
         <h3>{{.T "system.configTitle"}}</h3>
         <div class="kvs">
           <div class="muted">{{.T "system.configUpdatedAt"}}</div>
-          <div><code>{{.ConfigUpdatedAt}}</code></div>
+          <div><code data-hz-iso="{{.ConfigUpdatedAt}}">{{.ConfigUpdatedAt}}</code></div>
           <div class="muted">{{.T "system.encryption"}}</div>
           <div>
             {{if .EncryptionEnabled}}
@@ -53,6 +53,21 @@
           <a class="btn" href="/config/export" data-confirm-download="{{.T "backup.confirmTitle"}}" data-confirm-detail="{{.T "backup.confirmDetail"}}">{{.T "nav.export"}}</a>
         </div>
       </div>
+    </div>
+
+    <div class="card">
+      <h3>{{.T "system.timezoneTitle"}}</h3>
+      <div class="muted small">{{.T "system.timezoneHint"}}</div>
+      <form method="post" action="/system/timezone" class="form" style="margin-top:12px;">
+        <div class="field">
+          <label>{{.T "system.timezoneLabel"}}</label>
+          <input type="text" name="timeZone" value="{{.TimeZone}}" placeholder="{{.T "system.timezonePlaceholder"}}" />
+          <div class="hint">{{.T "system.timezoneHint2"}}</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
+        </div>
+      </form>
     </div>
 
     <div class="card">

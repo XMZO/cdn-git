@@ -25,6 +25,7 @@ func init() {
 		"error.loginFailed":         "登录失败",
 		"error.jsonInvalid":         "JSON 格式错误",
 		"error.configInvalid":       "配置不合法",
+		"error.timeZoneInvalid":     "时区格式不正确（示例：auto、UTC、+08:00、-05:30、UTC+8）",
 		"error.importSecretsDecryptFailed": "导入失败：备份包含加密字段（enc:v1），但无法解密。失败字段：%s。请确认 HAZUKI_MASTER_KEY 与导出时一致；如果你迁移/重建了数据库，请用原 hazuki.db 重新导出（新版备份会包含 kdfSaltB64），或直接迁移 hazuki.db；也可以勾选“清空加密字段”继续导入。",
 		"error.portRange":           "端口必须是 1-65535 的整数",
 		"error.portRequired":        "端口不能为空",
@@ -195,6 +196,12 @@ func init() {
 		"system.redis.usedMemory": "Used Memory",
 		"system.redis.dbSize":     "DBSize",
 		"system.redis.keys":       "keys",
+
+		"system.timezoneTitle":       "时区",
+		"system.timezoneHint":        "用于 Web 面板显示（不影响代理服务逻辑）。保存后刷新生效。",
+		"system.timezoneLabel":       "面板时区",
+		"system.timezonePlaceholder": "auto / UTC / +08:00",
+		"system.timezoneHint2":       "auto=使用浏览器本地时区；UTC=按 UTC 显示；+08:00/-05:30=固定偏移（支持 UTC+8 写法）。",
 
 		"layout.meta":        "Hazuki 管理面板（本地管理员）。",
 		"layout.currentUser": "当前用户",
@@ -502,6 +509,7 @@ func init() {
 		"error.loginFailed":         "Sign in failed",
 		"error.jsonInvalid":         "Invalid JSON",
 		"error.configInvalid":       "Invalid config",
+		"error.timeZoneInvalid":     "Invalid time zone format (examples: auto, UTC, +08:00, -05:30, UTC+8).",
 		"error.importSecretsDecryptFailed": "Import failed: encrypted secrets (enc:v1) could not be decrypted. Failed fields: %s. Ensure HAZUKI_MASTER_KEY matches the export. If you migrated/recreated the DB, re-export from the original hazuki.db (new backups include kdfSaltB64) or migrate hazuki.db. Or tick “Clear encrypted secrets” to continue.",
 		"error.portRange":           "Port must be an integer from 1 to 65535",
 		"error.portRequired":        "Port is required",
@@ -672,6 +680,12 @@ func init() {
 		"system.redis.usedMemory": "Used memory",
 		"system.redis.dbSize":     "DB size",
 		"system.redis.keys":       "keys",
+
+		"system.timezoneTitle":       "Time zone",
+		"system.timezoneHint":        "Used for the admin panel display only (does not affect proxy behavior). Takes effect after refresh.",
+		"system.timezoneLabel":       "Panel time zone",
+		"system.timezonePlaceholder": "auto / UTC / +08:00",
+		"system.timezoneHint2":       "auto = browser local time; UTC = display in UTC; +08:00/-05:30 = fixed offset (also accepts UTC+8).",
 
 		"layout.meta":        "Hazuki admin panel (local admin).",
 		"layout.currentUser": "User",

@@ -29,7 +29,7 @@
               {{range .Versions}}
                 <tr>
                   <td><code>{{.ID}}</code></td>
-                  <td>{{.CreatedAt}}</td>
+                  <td><code data-hz-iso="{{.CreatedAt}}">{{.CreatedAt}}</code></td>
                   <td>{{if .CreatedBy}}{{.CreatedBy}}{{else}}-{{end}}</td>
                   <td>{{.Note}}</td>
                   <td>

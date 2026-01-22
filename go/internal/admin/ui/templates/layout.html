@@ -11,10 +11,11 @@
     <script>
       window.HazukiLang = {{printf "%q" .LangCode}};
       window.HazukiI18n = {{.JSI18n}};
+      window.HazukiTimeZone = {{printf "%q" .TimeZone}};
     </script>
     <script src="/assets/app.js" defer></script>
   </head>
-  <body data-page="{{.BodyTemplate}}" data-lang="{{.LangCode}}">
+  <body data-page="{{.BodyTemplate}}" data-lang="{{.LangCode}}" data-tz="{{.TimeZone}}">
     <div class="app">
       {{if .User}}
         <aside class="sidebar">

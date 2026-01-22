@@ -303,19 +303,123 @@
 
   const pad2 = (n) => String(n).padStart(2, "0");
 
+  const getTimeZoneSpec = () => ((window && window.HazukiTimeZone) || "").toString().trim();
+
+  const parseTimeZoneSpec = (spec) => {
+    const raw = (spec || "").toString().trim();
+    if (!raw) return { mode: "auto", offsetMinutes: 0, label: "auto" };
+
+    const lower = raw.toLowerCase();
+    if (lower === "auto" || lower === "browser" || lower === "local") {
+      return { mode: "auto", offsetMinutes: 0, label: "auto" };
+    }
+    if (lower === "utc" || lower === "z") {
+      return { mode: "utc", offsetMinutes: 0, label: "UTC" };
+    }
+
+    let s = raw;
+    if (lower.startsWith("utc")) {
+      s = raw.slice(3).trim();
+      if (!s) return { mode: "utc", offsetMinutes: 0, label: "UTC" };
+    }
+
+    const m = s.match(/^([+-])\s*(\d{1,2})(?::?\s*(\d{2}))?$/);
+    if (!m) return { mode: "auto", offsetMinutes: 0, label: "auto" };
+
+    const sign = m[1] === "-" ? -1 : 1;
+    const hh = Number(m[2]);
+    const mm = m[3] ? Number(m[3]) : 0;
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return { mode: "auto", offsetMinutes: 0, label: "auto" };
+    if (hh < 0 || hh > 14 || mm < 0 || mm > 59) return { mode: "auto", offsetMinutes: 0, label: "auto" };
+
+    const offsetMinutes = sign * (hh * 60 + mm);
+    if (offsetMinutes < -14 * 60 || offsetMinutes > 14 * 60) return { mode: "auto", offsetMinutes: 0, label: "auto" };
+
+    const label = (offsetMinutes === 0 ? "UTC" : `${sign === 1 ? "+" : "-"}${pad2(hh)}:${pad2(mm)}`);
+    return { mode: "offset", offsetMinutes, label };
+  };
+
+  let tzCacheSpec = null;
+  let tzCacheInfo = null;
+  const getTimeZoneInfo = () => {
+    const spec = getTimeZoneSpec();
+    if (spec === tzCacheSpec && tzCacheInfo) return tzCacheInfo;
+    tzCacheSpec = spec;
+    tzCacheInfo = parseTimeZoneSpec(spec);
+    return tzCacheInfo;
+  };
+
+  const datePartsFromMs = (ms) => {
+    const tz = getTimeZoneInfo();
+    let d = new Date(ms);
+    let useUTC = false;
+
+    if (tz.mode === "utc") {
+      useUTC = true;
+    } else if (tz.mode === "offset") {
+      d = new Date(ms + tz.offsetMinutes * 60 * 1000);
+      useUTC = true;
+    }
+
+    if (!Number.isFinite(d.getTime())) return null;
+
+    const y = useUTC ? d.getUTCFullYear() : d.getFullYear();
+    const m = pad2((useUTC ? d.getUTCMonth() : d.getMonth()) + 1);
+    const day = pad2(useUTC ? d.getUTCDate() : d.getDate());
+    const h = pad2(useUTC ? d.getUTCHours() : d.getHours());
+    const min = pad2(useUTC ? d.getUTCMinutes() : d.getMinutes());
+    const sec = pad2(useUTC ? d.getUTCSeconds() : d.getSeconds());
+    return { y, m, day, h, min, sec, tz };
+  };
+
   const formatBucketTime = (kind, ts) => {
     const n = Number(ts);
     if (!Number.isFinite(n) || n <= 0) return "-";
-    const d = new Date(n * 1000);
-    if (!Number.isFinite(d.getTime())) return "-";
-    const y = d.getUTCFullYear();
-    const m = pad2(d.getUTCMonth() + 1);
-    const day = pad2(d.getUTCDate());
-    const h = pad2(d.getUTCHours());
-    if (kind === "year") return String(y);
-    if (kind === "month") return `${y}-${m}`;
-    if (kind === "day") return `${y}-${m}-${day}`;
-    return `${y}-${m}-${day} ${h}:00`;
+    const parts = datePartsFromMs(n * 1000);
+    if (!parts) return "-";
+    if (kind === "year") return String(parts.y);
+    if (kind === "month") return `${parts.y}-${parts.m}`;
+    if (kind === "day") return `${parts.y}-${parts.m}-${parts.day}`;
+    return `${parts.y}-${parts.m}-${parts.day} ${parts.h}:${parts.min}`;
+  };
+
+  const normalizeIsoForDate = (iso) => {
+    let s = (iso || "").toString().trim();
+    if (!s) return "";
+
+    // RFC3339Nano -> keep at most 3 fractional digits for JS Date parsing compatibility.
+    s = s.replace(/(\.\d{3})\d+(?=Z|[+-]\d{2}:?\d{2}$)/, "$1");
+    return s;
+  };
+
+  const parseIsoToMs = (iso) => {
+    const s0 = (iso || "").toString().trim();
+    if (!s0) return NaN;
+
+    let s = normalizeIsoForDate(s0);
+    let ms = Date.parse(s);
+    if (Number.isFinite(ms)) return ms;
+
+    // Fallback: drop all fractional seconds.
+    s = s.replace(/\.\d+(?=Z|[+-]\d{2}:?\d{2}$)/, "");
+    ms = Date.parse(s);
+    return ms;
+  };
+
+  const formatInstantMs = (ms) => {
+    const parts = datePartsFromMs(ms);
+    if (!parts) return "-";
+    return `${parts.y}-${parts.m}-${parts.day} ${parts.h}:${parts.min}:${parts.sec}`;
+  };
+
+  const applyTimeFormatting = () => {
+    for (const el of qsa("[data-hz-iso]")) {
+      const iso = (el.getAttribute("data-hz-iso") || "").trim();
+      if (!iso) continue;
+      const ms = parseIsoToMs(iso);
+      if (!Number.isFinite(ms) || ms <= 0) continue;
+      el.textContent = formatInstantMs(ms);
+    }
   };
 
   const setTrafficKindActive = (kind) => {
@@ -1028,6 +1132,7 @@
 
   const refreshPage = ({ skipNav = false, pathname = "" } = {}) => {
     if (!skipNav) updateNavActive(pathname);
+    applyTimeFormatting();
     updateGitPreview();
     updateCdnjsPreview();
     updateTorcherinoPreview();
