@@ -304,7 +304,9 @@
   const pad2 = (n) => String(n).padStart(2, "0");
 
   const formatBucketTime = (kind, ts) => {
-    const d = new Date(Number(ts) * 1000);
+    const n = Number(ts);
+    if (!Number.isFinite(n) || n <= 0) return "-";
+    const d = new Date(n * 1000);
     if (!Number.isFinite(d.getTime())) return "-";
     const y = d.getUTCFullYear();
     const m = pad2(d.getUTCMonth() + 1);

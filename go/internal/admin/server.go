@@ -1316,6 +1316,42 @@ func (s *server) trafficSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	minStartTS, err := storage.GetTrafficMinBucketStartTS(r.Context(), s.db, kind, sel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if minStartTS <= 0 {
+		// No data for this selector yet: don't render fake empty buckets.
+		payload := map[string]any{
+			"ok":      true,
+			"time":    time.Now().UTC().Format(time.RFC3339Nano),
+			"kind":    kind,
+			"service": service,
+			"fromTs":  int64(0),
+			"toTs":    int64(0),
+			"points":  []storage.TrafficSeriesPoint{},
+		}
+		b, _ := json.Marshal(payload)
+
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		w.Header().Set("cache-control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write(b)
+		return
+	}
+
+	minStartTime := time.Unix(minStartTS, 0).UTC()
+	if minStartTime.After(from) {
+		from = minStartTime
+	}
+	if from.After(to) {
+		from = to
+	}
+
 	points, err := storage.GetTrafficSeries(r.Context(), s.db, kind, from.Unix(), to.Unix(), sel)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

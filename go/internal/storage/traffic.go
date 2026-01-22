@@ -347,6 +347,57 @@ ORDER BY start_ts ASC;
 	return out, rows.Err()
 }
 
+func GetTrafficMinBucketStartTS(ctx context.Context, db *sql.DB, kind string, sel TrafficServiceSelector) (int64, error) {
+	if db == nil {
+		return 0, nil
+	}
+	if kind != trafficBucketHour && kind != trafficBucketDay && kind != trafficBucketMonth && kind != trafficBucketYear {
+		return 0, fmt.Errorf("invalid traffic bucket kind: %q", kind)
+	}
+
+	var query string
+	var args []any
+
+	switch sel.Mode {
+	case "", "total":
+		query = `SELECT MIN(start_ts) FROM traffic_buckets WHERE kind = ?;`
+		args = []any{kind}
+	case "proxy_total":
+		query = `
+SELECT MIN(start_ts)
+FROM traffic_buckets
+WHERE kind = ?
+  AND (service = 'torcherino' OR service = 'cdnjs' OR service = 'git' OR service LIKE 'git:%');
+`
+		args = []any{kind}
+	case "exact":
+		svc := strings.TrimSpace(sel.Service)
+		if svc == "" {
+			return 0, nil
+		}
+		query = `SELECT MIN(start_ts) FROM traffic_buckets WHERE kind = ? AND service = ?;`
+		args = []any{kind, svc}
+	case "prefix":
+		root := strings.TrimSpace(sel.Service)
+		if root == "" {
+			return 0, nil
+		}
+		query = `SELECT MIN(start_ts) FROM traffic_buckets WHERE kind = ? AND (service = ? OR service LIKE ?);`
+		args = []any{kind, root, root + ":%"}
+	default:
+		return 0, fmt.Errorf("invalid selector mode: %q", sel.Mode)
+	}
+
+	var min sql.NullInt64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&min); err != nil {
+		return 0, err
+	}
+	if !min.Valid || min.Int64 <= 0 {
+		return 0, nil
+	}
+	return min.Int64, nil
+}
+
 func ClearTrafficStats(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return nil
