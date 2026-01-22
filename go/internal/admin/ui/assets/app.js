@@ -347,7 +347,17 @@
     const innerW = Math.max(1, width - pad * 2);
     const innerH = Math.max(1, height - pad * 2);
     const denom = Math.max(1, max);
-    const step = n === 1 ? 0 : innerW / (n - 1);
+
+    // When there's only one bucket, draw a flat line so it's still visible.
+    if (n === 1) {
+      const v = Math.max(0, Number(values[0]) || 0);
+      const y = pad + (1 - Math.min(1, v / denom)) * innerH;
+      const x0 = pad;
+      const x1 = pad + innerW;
+      return `M${x0.toFixed(2)} ${y.toFixed(2)} L${x1.toFixed(2)} ${y.toFixed(2)}`;
+    }
+
+    const step = innerW / (n - 1);
 
     let d = "";
     for (let i = 0; i < n; i += 1) {
