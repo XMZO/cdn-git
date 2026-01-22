@@ -9,11 +9,12 @@ import (
 )
 
 type AppConfig struct {
-	Version    int             `json:"version"`
-	Ports      PortsConfig      `json:"ports"`
-	Cdnjs      CdnjsConfig      `json:"cdnjs"`
-	Git        GitConfig        `json:"git"`
-	Torcherino TorcherinoConfig `json:"torcherino"`
+	Version      int                 `json:"version"`
+	Ports        PortsConfig         `json:"ports"`
+	Cdnjs        CdnjsConfig         `json:"cdnjs"`
+	Git          GitConfig           `json:"git"`
+	GitInstances []GitInstanceConfig `json:"gitInstances,omitempty"`
+	Torcherino   TorcherinoConfig    `json:"torcherino"`
 }
 
 type PortsConfig struct {
@@ -29,43 +30,55 @@ type RedisConfig struct {
 }
 
 type CdnjsConfig struct {
-	AssetURL      string      `json:"assetUrl"`
-	AllowedGhUsers []string   `json:"allowedGhUsers"`
-	DefaultGhUser string      `json:"defaultGhUser"`
-	Redis         RedisConfig `json:"redis"`
+	Disabled          bool           `json:"disabled,omitempty"`
+	AssetURL          string         `json:"assetUrl"`
+	AllowedGhUsers    []string       `json:"allowedGhUsers"`
+	BlockedGhUsers    []string       `json:"blockedGhUsers,omitempty"`
+	GhUserPolicy      string         `json:"ghUserPolicy,omitempty"` // allowlist (default) | denylist
+	DefaultGhUser     string         `json:"defaultGhUser"`
+	Redis             RedisConfig    `json:"redis"`
 	DefaultTTLSeconds int            `json:"defaultTTLSeconds,omitempty"`
 	CacheTTLSeconds   map[string]int `json:"cacheTTLSeconds,omitempty"`
 }
 
 type GitConfig struct {
-	GithubToken      string            `json:"githubToken"`
-	GithubAuthScheme string            `json:"githubAuthScheme"`
+	Disabled         bool   `json:"disabled,omitempty"`
+	GithubToken      string `json:"githubToken"`
+	GithubAuthScheme string `json:"githubAuthScheme"`
 
 	Upstream       string `json:"upstream"`
 	UpstreamMobile string `json:"upstreamMobile"`
 	UpstreamPath   string `json:"upstreamPath"`
 	HTTPS          bool   `json:"https"`
 
-	DisableCache     bool   `json:"disableCache"`
-	CacheControl     string `json:"cacheControl"`
+	DisableCache      bool   `json:"disableCache"`
+	CacheControl      string `json:"cacheControl"`
 	CacheControlMedia string `json:"cacheControlMedia"`
 	CacheControlText  string `json:"cacheControlText"`
 
-	CorsOrigin          string `json:"corsOrigin"`
+	CorsOrigin           string `json:"corsOrigin"`
 	CorsAllowCredentials bool   `json:"corsAllowCredentials"`
 	CorsExposeHeaders    string `json:"corsExposeHeaders"`
 
-	BlockedRegions    []string          `json:"blockedRegions"`
-	BlockedIpAddresses []string         `json:"blockedIpAddresses"`
+	BlockedRegions     []string `json:"blockedRegions"`
+	BlockedIpAddresses []string `json:"blockedIpAddresses"`
 
 	ReplaceDict map[string]string `json:"replaceDict"`
 }
 
+type GitInstanceConfig struct {
+	ID   string    `json:"id"`
+	Name string    `json:"name,omitempty"`
+	Port int       `json:"port"`
+	Git  GitConfig `json:"git"`
+}
+
 type TorcherinoConfig struct {
-	DefaultTarget        string            `json:"defaultTarget"`
-	HostMapping          map[string]string `json:"hostMapping"`
-	WorkerSecretKey      string            `json:"workerSecretKey"`
-	WorkerSecretHeaders  []string          `json:"workerSecretHeaders"`
+	Disabled              bool              `json:"disabled,omitempty"`
+	DefaultTarget         string            `json:"defaultTarget"`
+	HostMapping           map[string]string `json:"hostMapping"`
+	WorkerSecretKey       string            `json:"workerSecretKey"`
+	WorkerSecretHeaders   []string          `json:"workerSecretHeaders"`
 	WorkerSecretHeaderMap map[string]string `json:"workerSecretHeaderMap"`
 }
 
@@ -79,9 +92,11 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			Git:        3002,
 		},
 		Cdnjs: CdnjsConfig{
-			AssetURL:      strings.TrimSpace(defaultString(getEnv("ASSET_URL"), "https://cdn.jsdelivr.net")),
+			AssetURL:       strings.TrimSpace(defaultString(getEnv("ASSET_URL"), "https://cdn.jsdelivr.net")),
 			AllowedGhUsers: parseCSV(getEnv("ALLOWED_GH_USERS")),
-			DefaultGhUser: strings.TrimSpace(getEnv("DEFAULT_GH_USER")),
+			BlockedGhUsers: parseCSV(getEnv("BLOCKED_GH_USERS")),
+			GhUserPolicy:   strings.TrimSpace(getEnv("GH_USER_POLICY")),
+			DefaultGhUser:  strings.TrimSpace(getEnv("DEFAULT_GH_USER")),
 			Redis: RedisConfig{
 				Host: strings.TrimSpace(defaultString(getEnv("REDIS_HOST"), "redis")),
 				Port: parsePort(getEnv("REDIS_PORT"), 6379),
@@ -114,10 +129,10 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			},
 		},
 		Torcherino: TorcherinoConfig{
-			DefaultTarget:   strings.TrimSpace(getEnv("DEFAULT_TARGET")),
-			HostMapping:     map[string]string{},
-			WorkerSecretKey: getEnv("WORKER_SECRET_KEY"),
-			WorkerSecretHeaders: parseHeaderNamesCSV(getEnv("WORKER_SECRET_HEADERS")),
+			DefaultTarget:         strings.TrimSpace(getEnv("DEFAULT_TARGET")),
+			HostMapping:           map[string]string{},
+			WorkerSecretKey:       getEnv("WORKER_SECRET_KEY"),
+			WorkerSecretHeaders:   parseHeaderNamesCSV(getEnv("WORKER_SECRET_HEADERS")),
 			WorkerSecretHeaderMap: map[string]string{},
 		},
 	}
@@ -155,6 +170,7 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 	cfg.Git.BlockedRegions = normalizeUpper(cfg.Git.BlockedRegions)
 	cfg.Git.BlockedIpAddresses = trimFilter(cfg.Git.BlockedIpAddresses)
 	cfg.Cdnjs.AllowedGhUsers = trimFilter(cfg.Cdnjs.AllowedGhUsers)
+	cfg.Cdnjs.BlockedGhUsers = trimFilter(cfg.Cdnjs.BlockedGhUsers)
 
 	return cfg, cfg.Validate()
 }
@@ -178,6 +194,40 @@ func (c AppConfig) Validate() error {
 			return fmt.Errorf("%s must be 1-65535", p.name)
 		}
 	}
+
+	// Prevent port conflicts among enabled services/instances.
+	usedPorts := map[int]string{
+		c.Ports.Admin: "admin",
+	}
+	addPort := func(port int, name string) error {
+		if port < 1 || port > 65535 {
+			return nil
+		}
+		if prev, ok := usedPorts[port]; ok {
+			return fmt.Errorf("port conflict: %d used by %s and %s", port, prev, name)
+		}
+		usedPorts[port] = name
+		return nil
+	}
+	if !c.Torcherino.Disabled {
+		if err := addPort(c.Ports.Torcherino, "torcherino"); err != nil {
+			return err
+		}
+	}
+	if !c.Cdnjs.Disabled {
+		if err := addPort(c.Ports.Cdnjs, "cdnjs"); err != nil {
+			return err
+		}
+	}
+	if !c.Git.Disabled {
+		if err := addPort(c.Ports.Git, "git(default)"); err != nil {
+			return err
+		}
+	}
+	ghUserPolicy := strings.ToLower(strings.TrimSpace(c.Cdnjs.GhUserPolicy))
+	if ghUserPolicy != "" && ghUserPolicy != "allowlist" && ghUserPolicy != "denylist" {
+		return errors.New("cdnjs.ghUserPolicy must be 'allowlist' or 'denylist'")
+	}
 	if c.Cdnjs.DefaultTTLSeconds < 0 || c.Cdnjs.DefaultTTLSeconds > maxTTLSeconds {
 		return fmt.Errorf("cdnjs.defaultTTLSeconds must be 0-%d", maxTTLSeconds)
 	}
@@ -189,8 +239,36 @@ func (c AppConfig) Validate() error {
 			return fmt.Errorf("cdnjs.cacheTTLSeconds[%q] must be 1-%d", ext, maxTTLSeconds)
 		}
 	}
-	if strings.TrimSpace(c.Git.UpstreamPath) == "" {
+	if !c.Git.Disabled && strings.TrimSpace(c.Git.UpstreamPath) == "" {
 		return errors.New("git.upstreamPath is required")
+	}
+
+	seenGitIDs := map[string]struct{}{}
+	for i, inst := range c.GitInstances {
+		id := strings.TrimSpace(inst.ID)
+		if id == "" {
+			return fmt.Errorf("gitInstances[%d].id is required", i)
+		}
+		if strings.EqualFold(id, "default") {
+			return fmt.Errorf("gitInstances[%d].id cannot be 'default'", i)
+		}
+		if _, ok := seenGitIDs[strings.ToLower(id)]; ok {
+			return fmt.Errorf("gitInstances[%d].id duplicated: %q", i, id)
+		}
+		seenGitIDs[strings.ToLower(id)] = struct{}{}
+
+		if inst.Port < 1 || inst.Port > 65535 {
+			return fmt.Errorf("gitInstances[%q].port must be 1-65535", id)
+		}
+		if !inst.Git.Disabled {
+			if err := addPort(inst.Port, "gitInstances."+id); err != nil {
+				return err
+			}
+		}
+
+		if !inst.Git.Disabled && strings.TrimSpace(inst.Git.UpstreamPath) == "" {
+			return fmt.Errorf("gitInstances[%q].git.upstreamPath is required", id)
+		}
 	}
 	return nil
 }

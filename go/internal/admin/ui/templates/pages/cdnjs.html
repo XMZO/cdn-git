@@ -1,60 +1,84 @@
 {{define "cdnjs"}}
   <div class="grid">
     <div class="card">
-      <h2>jsDelivr 缓存（cdnjs）</h2>
-      <div class="muted small">代理 <code>{{.Cdnjs.AssetURL}}</code> 并使用 Redis 缓存静态资源。</div>
+      <h2>{{.Title}} <span class="muted small">{{.T "cdnjs.tagline"}}</span></h2>
+      <div class="muted small">{{.T "cdnjs.proxyPrefix"}} <code>{{.Cdnjs.AssetURL}}</code> {{.T "cdnjs.proxySuffix"}}</div>
       <div class="btn-row">
-        <span class="pill">服务地址：<code>{{.CdnjsBaseURL}}</code></span>
-        {{if .CdnjsStatus.Status}}{{template "serviceStatusPill" .CdnjsStatus}}{{end}}
-        <a class="btn" href="{{.CdnjsHealthURL}}" target="_blank" rel="noreferrer">打开 /_hazuki/health</a>
+        <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.CdnjsBaseURL}}</code></span>
+        {{if .CdnjsStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .CdnjsStatus)}}{{end}}
+        <a class="btn" href="{{.CdnjsHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
       </div>
       {{if and (eq .CdnjsStatus.Status "error") .CdnjsStatus.Error}}
-        <div class="muted small" style="margin-top:10px;">Health 错误：{{.CdnjsStatus.Error}}</div>
+        <div class="muted small" style="margin-top:10px;">{{.T "common.healthErrorPrefix"}}：{{.CdnjsStatus.Error}}</div>
       {{end}}
       <div class="muted small" style="margin-top:10px;">
-        访问方式：<code>{{.CdnjsBaseURL}}/gh/&lt;user&gt;/&lt;repo@ref/path&gt;</code> 或 <code>{{.CdnjsBaseURL}}/&lt;repo@ref/path&gt;</code>（走默认用户）
+        {{.T "cdnjs.usage"}}：<code>{{.CdnjsBaseURL}}/gh/&lt;user&gt;/&lt;repo@ref/path&gt;</code> {{.T "common.or"}} <code>{{.CdnjsBaseURL}}/&lt;repo@ref/path&gt;</code>（{{.T "cdnjs.usageDefaultUser" }}）
       </div>
     </div>
 
     <form class="form" method="post" action="/config/cdnjs">
       <div class="card">
-        <h3>基础配置</h3>
+        <h3>{{.T "common.basicConfig"}}</h3>
         <div class="grid cols-2">
           <div class="field">
-            <label>端口 <span class="key">ports.cdnjs</span></label>
+            <label>{{.T "common.port"}} <span class="key">ports.cdnjs</span></label>
             <input type="text" name="cdnjsPort" value="{{.CdnjsPortValue}}" placeholder="3001" />
-            <div class="hint">修改端口需要重启。</div>
+            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
           </div>
           <div class="field">
-            <label>上游 jsDelivr 地址 <span class="key">ASSET_URL</span></label>
+            <label>{{.T "cdnjs.assetUrlLabel"}} <span class="key">ASSET_URL</span></label>
             <input type="text" name="assetUrl" value="{{.Cdnjs.AssetURL}}" placeholder="https://cdn.jsdelivr.net" required />
-            <div class="hint">一般不需要改。</div>
+            <div class="hint">{{.T "common.usuallyNoNeedChange"}}</div>
           </div>
+        </div>
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="serviceEnabled" {{if not .Cdnjs.Disabled}}checked{{end}} />
+            <input type="hidden" name="serviceEnabled" value="0" />
+            {{.T "common.enableService"}} <span class="key">cdnjs.disabled</span>
+          </label>
+          <div class="hint">{{.T "cdnjs.serviceToggleHint"}}</div>
         </div>
       </div>
 
       <details class="card accordion" open>
-        <summary>访问规则 <span class="muted small">（GitHub 用户）</span></summary>
+        <summary>{{.T "common.accessRules"}} <span class="muted small">{{.T "common.githubUsersTag"}}</span></summary>
         <div class="body">
           <div class="field">
-            <label>默认用户（短路径） <span class="key">DEFAULT_GH_USER</span></label>
+            <label>{{.T "cdnjs.ghUserPolicyLabel"}} <span class="key">GH_USER_POLICY</span></label>
+            <select name="ghUserPolicy">
+              <option value="allowlist" {{if eq .GhUserPolicyValue "allowlist"}}selected{{end}}>{{.T "cdnjs.policy.allowlist"}}</option>
+              <option value="denylist" {{if eq .GhUserPolicyValue "denylist"}}selected{{end}}>{{.T "cdnjs.policy.denylist"}}</option>
+            </select>
+            <div class="hint">
+              <code>allowlist</code>{{.T "cdnjs.ghUserPolicyHintAllowlist"}} <code>ALLOWED_GH_USERS</code>{{.T "common.semicolon"}}<code>denylist</code>{{.T "cdnjs.ghUserPolicyHintDenylist"}} <code>BLOCKED_GH_USERS</code>{{.T "common.period"}}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>{{.T "cdnjs.defaultUserLabel"}} <span class="key">DEFAULT_GH_USER</span></label>
             <input type="text" name="defaultGhUser" value="{{.Cdnjs.DefaultGhUser}}" placeholder="XMZO" />
-            <div class="hint">用于短路径：请求 <code>/repo@ref/path</code> 会走 <code>/gh/DEFAULT_GH_USER/repo@ref/path</code>。</div>
+            <div class="hint">{{.T "cdnjs.defaultUserHintPrefix"}} <code>/repo@ref/path</code> {{.T "cdnjs.defaultUserHintMiddle"}} <code>/gh/DEFAULT_GH_USER/repo@ref/path</code>{{.T "common.period"}}</div>
           </div>
           <div class="field">
-            <label>允许的用户白名单 <span class="key">ALLOWED_GH_USERS</span></label>
+            <label>{{.T "cdnjs.allowedUsersLabel"}} <span class="key">ALLOWED_GH_USERS</span></label>
             <input type="text" name="allowedGhUsers" value="{{.AllowedUsersCsv}}" placeholder="XMZO,starsei" />
-            <div class="hint">用于 <code>/gh/&lt;user&gt;/...</code> 的白名单（逗号分隔，大小写不敏感）。为空则 <code>/gh/*</code> 全部拒绝。</div>
+            <div class="hint">{{.T "cdnjs.allowedUsersHintPrefix"}} <code>/gh/&lt;user&gt;/...</code> {{.T "common.commaSeparatedCaseInsensitive"}} {{.T "common.semicolon"}}{{.T "cdnjs.allowedUsersHintSuffix"}} <code>/gh/*</code>{{.T "common.period"}}</div>
+          </div>
+          <div class="field">
+            <label>{{.T "cdnjs.blockedUsersLabel"}} <span class="key">BLOCKED_GH_USERS</span></label>
+            <input type="text" name="blockedGhUsers" value="{{.BlockedUsersCsv}}" placeholder="baduser1,baduser2" />
+            <div class="hint">{{.T "cdnjs.blockedUsersHintPrefix"}} <code>/gh/*</code>{{.T "cdnjs.blockedUsersHintSuffix"}}{{.T "common.period"}}</div>
           </div>
         </div>
       </details>
 
       <details class="card accordion" open>
-        <summary>Redis 缓存</summary>
+        <summary>{{.T "cdnjs.redisTitle"}}</summary>
         <div class="body">
           {{if .RedisStatus.Status}}
             {{if eq .RedisStatus.Status "ok"}}
-              <div class="pill ok">Redis 正常 · {{.RedisStatus.LatencyMS}}ms · <code>{{.RedisStatus.Addr}}</code></div>
+              <div class="pill ok">{{.T "redis.ok"}} · {{.RedisStatus.LatencyMS}}ms · <code>{{.RedisStatus.Addr}}</code></div>
               {{if or .RedisStatus.ServerVersion .RedisStatus.UsedMemoryHuman (gt .RedisStatus.DBSize 0)}}
                 <div class="muted small" style="margin-top:8px;">
                   {{if .RedisStatus.ServerVersion}}v{{.RedisStatus.ServerVersion}}{{end}}
@@ -64,10 +88,10 @@
                 </div>
               {{end}}
             {{else if eq .RedisStatus.Status "error"}}
-              <div class="pill err">Redis 异常 · <code>{{.RedisStatus.Addr}}</code></div>
-              {{if .RedisStatus.Error}}<div class="muted small" style="margin-top:8px;">错误：{{.RedisStatus.Error}}</div>{{end}}
+              <div class="pill err">{{.T "redis.error"}} · <code>{{.RedisStatus.Addr}}</code></div>
+              {{if .RedisStatus.Error}}<div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.RedisStatus.Error}}</div>{{end}}
             {{else}}
-              <div class="pill">Redis 未配置</div>
+              <div class="pill">{{.T "redis.notConfigured"}}</div>
             {{end}}
           {{end}}
 
@@ -75,31 +99,31 @@
             <div class="field">
               <label>Host <span class="key">REDIS_HOST</span></label>
               <input type="text" name="redisHost" value="{{.Cdnjs.Redis.Host}}" placeholder="redis" />
-              <div class="hint">Docker Compose 内一般是 <code>redis</code>；本机一般是 <code>127.0.0.1</code>。</div>
+              <div class="hint">{{.T "cdnjs.redisHostHintPrefix"}} <code>redis</code>{{.T "common.semicolon"}}{{.T "cdnjs.redisHostHintSuffix"}} <code>127.0.0.1</code>{{.T "common.period"}}</div>
             </div>
             <div class="field">
               <label>Port <span class="key">REDIS_PORT</span></label>
               <input type="text" name="redisPort" value="{{.RedisPortValue}}" placeholder="6379" />
             </div>
           </div>
-          <div class="muted small">缓存键使用完整 cdn URL；会额外存一个 <code>:type</code> 记录 Content-Type。</div>
+          <div class="muted small">{{.T "cdnjs.redisKeyHintPrefix"}} <code>:type</code> {{.T "cdnjs.redisKeyHintSuffix"}}</div>
         </div>
       </details>
 
       <details class="card accordion" open>
-        <summary>缓存 TTL（按后缀）</summary>
+        <summary>{{.T "cdnjs.ttlTitle"}}</summary>
         <div class="body">
-          <div class="muted small">默认规则：js/css/png/... 30 天；mp4/mp3/pdf/... 7 天；json/xml/txt/... 1 天；html/htm 1 小时；其它走 Default TTL。可用 Overrides 精确覆盖。</div>
+          <div class="muted small">{{.T "cdnjs.ttlDefaultRulesHint"}}</div>
 
           <div class="field" style="margin-top:10px;">
-            <label>Default TTL（秒） <span class="key">defaultTTLSeconds</span></label>
+            <label>{{.T "cdnjs.defaultTTLLabel"}} <span class="key">defaultTTLSeconds</span></label>
             <input type="text" name="defaultTTLSeconds" value="{{.DefaultTTLValue}}" placeholder="86400" />
-            <div class="hint">当后缀未命中任何规则时使用；留空=内置默认。</div>
+            <div class="hint">{{.T "cdnjs.defaultTTLHint"}}</div>
           </div>
 
           <div class="field">
-            <label>预览（不会实际请求）</label>
-            <div class="hint">输入一个 path，查看最终上游 URL 与 TTL。</div>
+            <label>{{.T "common.preview"}} {{.T "common.previewNoRequest"}}</label>
+            <div class="hint">{{.T "cdnjs.previewHint"}}</div>
             <div class="grid cols-2">
               <input type="text" id="cdnjsPreviewPath" value="pic@main/README.md" placeholder="repo@ref/path/file.ext" />
               <input type="text" id="cdnjsPreviewUrl" value="" class="readonly" readonly />
@@ -108,84 +132,23 @@
           </div>
 
           <div class="field">
-            <label>TTL Overrides <span class="key">ext=seconds（一行一个）</span></label>
+            <label>{{.T "cdnjs.ttlOverridesLabel"}} <span class="key">ext=seconds（一行一个）</span></label>
             <textarea name="ttlOverrides" placeholder="mjs=2592000&#10;wasm=2592000&#10;webm=604800">{{.TTLOverridesValue}}</textarea>
-            <div class="hint">支持 <code>#</code> 注释；也支持直接粘贴 JSON 对象（例如 <code>{"mjs":2592000}</code>）。</div>
+            <div class="hint">{{.T "cdnjs.ttlOverridesHintPrefix"}} <code>#</code> {{.T "cdnjs.ttlOverridesHintSuffix"}} <code>{"mjs":2592000}</code>{{.T "common.period"}}</div>
           </div>
         </div>
       </details>
 
       <div class="card">
-        <h3>保存</h3>
+        <h3>{{.T "common.save"}}</h3>
         <div class="field">
-          <label>备注（可选）</label>
-          <input type="text" name="note" value="" placeholder="例如：更新 allowed users / 调整 redis" />
+          <label>{{.T "common.noteOptional"}}</label>
+          <input type="text" name="note" value="" placeholder="{{.T "cdnjs.notePlaceholder"}}" />
         </div>
         <div class="btn-row">
-          <button class="btn primary" type="submit">保存</button>
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
         </div>
       </div>
     </form>
   </div>
-
-  <script>
-    (() => {
-      const ui = window.HazukiUI;
-      if (!ui) return;
-
-      const qs = ui.qs;
-      const ttlCfg = {{.TTLEffectiveJSON}};
-      const ttl = (p) => {
-        const base = ((p || "").split("/").pop() || "").toLowerCase();
-        const dot = base.lastIndexOf(".");
-        const ext = dot === -1 ? "" : base.slice(dot + 1);
-        const map = ttlCfg && ttlCfg.ttlByExt ? ttlCfg.ttlByExt : {};
-        const def =
-          ttlCfg && Number(ttlCfg.defaultTTLSeconds)
-            ? Number(ttlCfg.defaultTTLSeconds)
-            : 86400;
-        return map[ext] || def;
-      };
-
-      const pretty = (sec) => {
-        if (sec >= 86400 && sec % 86400 === 0) return sec / 86400 + " 天";
-        if (sec >= 3600 && sec % 3600 === 0) return sec / 3600 + " 小时";
-        if (sec >= 60 && sec % 60 === 0) return sec / 60 + " 分钟";
-        return sec + " 秒";
-      };
-
-      const update = () => {
-        const pathEl = qs("#cdnjsPreviewPath");
-        const outEl = qs("#cdnjsPreviewUrl");
-        const hintEl = qs("#cdnjsPreviewHint");
-        if (!pathEl || !outEl || !hintEl) return;
-
-        let p = (pathEl.value || "").trim();
-        if (!p) p = "repo@ref/path/file.js";
-        p = p.replace(/^\/+/, "");
-
-        const asset = (qs('input[name="assetUrl"]')?.value || "")
-          .trim()
-          .replace(/\/+$/, "") || "https://cdn.jsdelivr.net";
-        const defUser = (qs('input[name="defaultGhUser"]')?.value || "").trim();
-
-        if (!defUser) {
-          outEl.value = asset + "/gh/<DEFAULT_GH_USER>/" + p;
-          hintEl.textContent = "DEFAULT_GH_USER 为空：短路径 /<path> 会返回 400。";
-          return;
-        }
-
-        outEl.value = asset + "/gh/" + defUser + "/" + p;
-        const t = ttl(p);
-        hintEl.textContent = "匹配 TTL：" + pretty(t) + "（Cache-Control: public, max-age=" + t + "）";
-      };
-
-      document.addEventListener("input", (e) => {
-        const t = e.target;
-        if (!t) return;
-        if (t.id === "cdnjsPreviewPath" || t.name === "assetUrl" || t.name === "defaultGhUser") update();
-      });
-      update();
-    })();
-  </script>
 {{end}}

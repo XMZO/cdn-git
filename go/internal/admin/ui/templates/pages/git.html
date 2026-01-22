@@ -1,58 +1,150 @@
 {{define "git"}}
   <div class="grid">
     <div class="card">
-      <h2>GitHub Raw 代理</h2>
-      <div class="muted small">代理 <code>raw.githubusercontent.com</code>，支持私有仓库 Token、CORS、缓存策略、HTML 内容替换（Go 版支持 ORB Content-Type 修正）。</div>
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "git.subtitle"}}</div>
       <div class="btn-row">
-        <span class="pill">服务地址：<code>{{.GitBaseURL}}</code></span>
-        {{if .GitStatus.Status}}{{template "serviceStatusPill" .GitStatus}}{{end}}
-        <a class="btn" href="{{.GitHealthURL}}" target="_blank" rel="noreferrer">打开 /_hazuki/health</a>
+        <span class="pill">{{.T "git.currentInstance"}}：<code>{{if .CurrentInstanceID}}{{.CurrentInstanceID}}{{else}}default{{end}}</code> · {{.CurrentInstanceName}}</span>
+        <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.GitBaseURL}}</code></span>
+        {{if .GitStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .GitStatus)}}{{end}}
+        <a class="btn" href="{{.GitHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
       </div>
       {{if and (eq .GitStatus.Status "error") .GitStatus.Error}}
-        <div class="muted small" style="margin-top:10px;">Health 错误：{{.GitStatus.Error}}</div>
+        <div class="muted small" style="margin-top:10px;">{{.T "common.healthErrorPrefix"}}：{{.GitStatus.Error}}</div>
       {{end}}
     </div>
 
+    <div class="card">
+      <h3>{{.T "git.instancesTitle"}}</h3>
+      <div class="muted small">{{.T "git.instancesHint"}}</div>
+
+      <div class="table-wrap" style="margin-top:12px;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>{{.T "common.name"}}</th>
+              <th>{{.T "common.id"}}</th>
+              <th>{{.T "common.port"}}</th>
+              <th>{{.T "common.status"}}</th>
+              <th>{{.T "common.actions"}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Instances}}
+              <tr>
+                <td>{{.Name}}</td>
+                <td><code>{{.ID}}</code></td>
+                <td><code>{{.Port}}</code></td>
+                <td>{{template "serviceStatusPill" (statusCtx $ .Status)}}</td>
+                <td>
+                  <div class="btn-row" style="margin-top:0;">
+                    <a class="btn" href="{{if eq .ID "default"}}/config/git{{else}}/config/git?instance={{.ID}}{{end}}">{{$.T "common.edit"}}</a>
+                    <a class="btn" href="{{.BaseURL}}" target="_blank" rel="noreferrer">{{$.T "common.open"}}</a>
+                    <a class="btn" href="{{.HealthURL}}" target="_blank" rel="noreferrer">{{$.T "common.health"}}</a>
+                    {{if ne .ID "default"}}
+                      <form method="post" action="/config/git" style="margin:0; display:inline;" onsubmit="return confirm({{printf "%q" ($.T "git.confirmDeleteInstance" .ID)}})">
+                        <input type="hidden" name="action" value="deleteInstance" />
+                        <input type="hidden" name="instanceID" value="{{.ID}}" />
+                        <button class="btn danger" type="submit">{{$.T "common.delete"}}</button>
+                      </form>
+                    {{end}}
+                  </div>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <details class="accordion" style="margin-top:12px;">
+        <summary>{{.T "git.addInstanceTitle"}}</summary>
+        <div class="body">
+          <form class="form" method="post" action="/config/git">
+            <input type="hidden" name="action" value="addInstance" />
+            <div class="grid cols-2">
+              <div class="field">
+                <label>{{.T "git.instanceIDLabel"}}</label>
+                <input type="text" name="newInstanceID" value="" placeholder="{{.T "git.instanceIDPlaceholder"}}" required />
+                <div class="hint">{{.T "git.instanceIDHintPrefix"}} <code>default</code>{{.T "common.period"}}</div>
+              </div>
+              <div class="field">
+                <label>{{.T "git.instanceNameLabel"}} {{.T "common.optionalTag"}}</label>
+                <input type="text" name="newInstanceName" value="" placeholder="{{.T "git.instanceNamePlaceholder"}}" />
+              </div>
+            </div>
+            <div class="grid cols-2">
+              <div class="field">
+                <label>{{.T "common.port"}}</label>
+                <input type="text" name="newInstancePort" value="" placeholder="3003" required />
+                <div class="hint">{{.T "git.composeHint"}}</div>
+              </div>
+              <div class="field">
+                <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                  <input type="checkbox" name="newInstanceEnabled" checked />
+                  <input type="hidden" name="newInstanceEnabled" value="0" />
+                  {{.T "git.enableAfterCreate"}}
+                </label>
+                <div class="hint">{{.T "git.copyDefaultHint"}}</div>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary" type="submit">{{.T "common.add"}}</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </div>
+
     <form class="form" method="post" action="/config/git">
+      <input type="hidden" name="instanceID" value="{{.CurrentInstanceID}}" />
       <div class="card">
-        <h3>基础配置</h3>
+        <h3>{{.T "common.basicConfig"}}</h3>
 
         <div class="grid cols-2">
           <div class="field">
-            <label>端口 <span class="key">ports.git</span></label>
+            <label>{{.T "common.port"}} <span class="key">{{.GitPortKey}}</span></label>
             <input type="text" name="gitPort" value="{{.GitPortValue}}" placeholder="3002" />
-            <div class="hint">修改端口需要重启；若通过反代暴露服务，别忘了同步修改反代/防火墙。</div>
+            <div class="hint">{{.T "git.portHint"}}</div>
           </div>
           <div class="field">
-            <label>上游协议 <span class="key">UPSTREAM_HTTPS</span></label>
+            <label>{{.T "git.upstreamProtocolLabel"}} <span class="key">UPSTREAM_HTTPS</span></label>
             <label class="hint" style="display:flex; gap:10px; align-items:center; font-weight:800;">
               <input type="checkbox" name="upstreamHttps" {{if .Git.HTTPS}}checked{{end}} />
-              使用 https
+              {{.T "git.useHttps"}}
             </label>
           </div>
         </div>
 
         <div class="field">
-          <label>默认仓库路径 <span class="key">UPSTREAM_PATH</span></label>
-          <input type="text" name="upstreamPath" value="{{.Git.UpstreamPath}}" placeholder="/用户名/仓库/分支" required />
-          <div class="hint">请求 <code>/x.png</code> 会拼成 <code>UPSTREAM_PATH + /x.png</code>；填 <code>/</code> 表示不加前缀。</div>
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="serviceEnabled" {{if .GitEnabled}}checked{{end}} />
+            <input type="hidden" name="serviceEnabled" value="0" />
+            {{.T "common.enableService"}} <span class="key">git.disabled</span>
+          </label>
+          <div class="hint">{{.T "git.serviceToggleHint"}}</div>
+        </div>
+
+        <div class="field">
+          <label>{{.T "git.upstreamPathLabel"}} <span class="key">UPSTREAM_PATH</span></label>
+          <input type="text" name="upstreamPath" value="{{.Git.UpstreamPath}}" placeholder="{{.T "git.upstreamPathPlaceholder"}}" required />
+          <div class="hint">{{.T "git.upstreamPathHintPrefix"}} <code>/x.png</code> {{.T "git.upstreamPathHintMiddle"}} <code>UPSTREAM_PATH + /x.png</code>{{.T "common.semicolon"}}{{.T "git.upstreamPathHintSuffix"}} <code>/</code> {{.T "git.upstreamPathHintSuffix2"}}{{.T "common.period"}}</div>
         </div>
 
         <div class="grid cols-2">
           <div class="field">
-            <label>上游域名（桌面） <span class="key">UPSTREAM</span></label>
+            <label>{{.T "git.upstreamDesktopLabel"}} <span class="key">UPSTREAM</span></label>
             <input type="text" name="upstream" value="{{.Git.Upstream}}" placeholder="raw.githubusercontent.com" />
           </div>
           <div class="field">
-            <label>上游域名（移动） <span class="key">UPSTREAM_MOBILE</span></label>
+            <label>{{.T "git.upstreamMobileLabel"}} <span class="key">UPSTREAM_MOBILE</span></label>
             <input type="text" name="upstreamMobile" value="{{.Git.UpstreamMobile}}" placeholder="{{.Git.Upstream}}" />
-            <div class="hint">按 UA 判断：Android/iPhone/iPad 等走移动端上游。</div>
+            <div class="hint">{{.T "git.upstreamMobileHint"}}</div>
           </div>
         </div>
 
         <div class="field">
-          <label>拼接预览（不会实际请求）</label>
-          <div class="hint">输入一个 path，查看最终上游 URL 与后缀猜测类型。</div>
+          <label>{{.T "git.previewTitle"}} {{.T "common.previewNoRequest"}}</label>
+          <div class="hint">{{.T "git.previewHint"}}</div>
           <div class="grid cols-2">
             <input type="text" id="gitPreviewPath" value="/a.png" placeholder="/path/file.ext" />
             <input type="text" id="gitPreviewUrl" value="" class="readonly" readonly />
@@ -62,67 +154,67 @@
       </div>
 
       <details class="card accordion" open>
-        <summary>鉴权 <span class="muted small">（GitHub Token）</span></summary>
+        <summary>{{.T "git.authTitle"}} <span class="muted small">{{.T "git.githubTokenTag"}}</span></summary>
         <div class="body">
           <div class="field">
             <label>GitHub Token <span class="key">GITHUB_TOKEN</span></label>
-            <input id="gitTokenInput" type="password" name="githubToken" value="" placeholder="{{if .TokenIsSet}}已设置（留空不变）{{else}}未设置{{end}}" />
+            <input id="gitTokenInput" type="password" name="githubToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderNotSet"}}{{end}}" />
             <div class="hint hint-line">
-              <span>用于私有仓库/提高限额；不会回显。</span>
+              <span>{{.T "git.tokenHint"}}</span>
               <span class="spacer"></span>
               <label class="pill" style="font-weight:800;">
                 <input type="checkbox" data-toggle-password="#gitTokenInput" />
-                显示
+                {{.T "common.show"}}
               </label>
               <label style="display:inline-flex; gap:8px; align-items:center; font-weight:800;">
                 <input type="checkbox" name="clearGithubToken" />
-                清空
+                {{.T "common.clear"}}
               </label>
             </div>
           </div>
 
           <div class="field">
-            <label>鉴权 Scheme <span class="key">GITHUB_AUTH_SCHEME</span></label>
+            <label>{{.T "git.authSchemeLabel"}} <span class="key">GITHUB_AUTH_SCHEME</span></label>
             <select name="githubAuthScheme">
-              <option value="token" {{if eq .AuthScheme "token"}}selected{{end}}>token（classic PAT）</option>
-              <option value="Bearer" {{if eq .AuthScheme "Bearer"}}selected{{end}}>Bearer（fine-grained）</option>
+              <option value="token" {{if eq .AuthScheme "token"}}selected{{end}}>{{.T "git.authSchemeToken"}}</option>
+              <option value="Bearer" {{if eq .AuthScheme "Bearer"}}selected{{end}}>{{.T "git.authSchemeBearer"}}</option>
             </select>
-            <div class="hint">常见选择：classic PAT 用 <code>token</code>；fine-grained token 用 <code>Bearer</code>。</div>
+            <div class="hint">{{.T "git.authSchemeHintPrefix"}} <code>token</code>{{.T "common.semicolon"}}{{.T "git.authSchemeHintSuffix"}} <code>Bearer</code>{{.T "common.period"}}</div>
           </div>
         </div>
       </details>
 
       <details class="card accordion" open>
-        <summary>缓存策略 <span class="muted small">（Cache-Control）</span></summary>
+        <summary>{{.T "git.cachePolicyTitle"}} <span class="muted small">（Cache-Control）</span></summary>
         <div class="body">
           <div class="field">
             <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
               <input type="checkbox" name="disableCache" {{if .Git.DisableCache}}checked{{end}} />
-              禁用缓存 <span class="key">DISABLE_CACHE</span>
+              {{.T "git.disableCacheLabel"}} <span class="key">DISABLE_CACHE</span>
             </label>
-            <div class="hint">开启后所有响应 <code>Cache-Control: no-store</code>，适合调试或强制实时。</div>
+            <div class="hint">{{.T "git.disableCacheHintPrefix"}} <code>Cache-Control: no-store</code>{{.T "git.disableCacheHintSuffix"}}</div>
           </div>
 
           <div class="field">
-            <label>全局 Cache-Control <span class="key">CACHE_CONTROL</span></label>
-            <input type="text" name="cacheControl" value="{{.Git.CacheControl}}" placeholder="留空则按内容类型使用下面默认值" />
-            <div class="hint">不为空时将覆盖所有类型。</div>
+            <label>{{.T "git.cacheControlGlobalLabel"}} <span class="key">CACHE_CONTROL</span></label>
+            <input type="text" name="cacheControl" value="{{.Git.CacheControl}}" placeholder="{{.T "git.cacheControlGlobalPlaceholder"}}" />
+            <div class="hint">{{.T "git.cacheControlGlobalHint"}}</div>
           </div>
 
           <div class="grid cols-2">
             <div class="field">
-              <label>媒体默认值 <span class="key">CACHE_CONTROL_MEDIA</span></label>
+              <label>{{.T "git.cacheControlMediaLabel"}} <span class="key">CACHE_CONTROL_MEDIA</span></label>
               <input type="text" name="cacheControlMedia" value="{{.Git.CacheControlMedia}}" placeholder="public, max-age=43200000" />
-              <div class="hint">图片/视频/音频/字体，或无法识别的类型。</div>
+              <div class="hint">{{.T "git.cacheControlMediaHint"}}</div>
             </div>
             <div class="field">
-              <label>文本默认值 <span class="key">CACHE_CONTROL_TEXT</span></label>
+              <label>{{.T "git.cacheControlTextLabel"}} <span class="key">CACHE_CONTROL_TEXT</span></label>
               <input type="text" name="cacheControlText" value="{{.Git.CacheControlText}}" placeholder="public, max-age=60" />
-              <div class="hint">HTML/CSS/JS/JSON/XML/TOML/YAML 等。</div>
+              <div class="hint">{{.T "git.cacheControlTextHint"}}</div>
             </div>
           </div>
 
-          <div class="muted small">判定逻辑：优先使用上游 Content-Type；缺失或为 <code>application/octet-stream</code> 时按文件后缀猜测后再分类。</div>
+          <div class="muted small">{{.T "git.cacheControlLogicPrefix"}} <code>application/octet-stream</code> {{.T "git.cacheControlLogicSuffix"}}</div>
         </div>
       </details>
 
@@ -130,182 +222,70 @@
         <summary>CORS</summary>
         <div class="body">
           <div class="field">
-            <label>允许 Origin <span class="key">CORS_ORIGIN</span></label>
-            <input type="text" name="corsOrigin" value="{{.Git.CorsOrigin}}" placeholder="* 或 https://a.com,https://b.com" />
-            <div class="hint">多个用逗号分隔；留空等同 <code>*</code>。</div>
+            <label>{{.T "git.corsOriginLabel"}} <span class="key">CORS_ORIGIN</span></label>
+            <input type="text" name="corsOrigin" value="{{.Git.CorsOrigin}}" placeholder="{{.T "git.corsOriginPlaceholder"}}" />
+            <div class="hint">{{.T "git.corsOriginHintPrefix"}} <code>*</code>{{.T "common.period"}}</div>
           </div>
           <div class="field">
             <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
               <input type="checkbox" name="corsAllowCredentials" {{if .Git.CorsAllowCredentials}}checked{{end}} />
-              允许携带凭据 <span class="key">CORS_ALLOW_CREDENTIALS</span>
+              {{.T "git.corsAllowCredentialsLabel"}} <span class="key">CORS_ALLOW_CREDENTIALS</span>
             </label>
-            <div class="hint">注意：开启凭据时 <code>CORS_ORIGIN</code> 不能是 <code>*</code>，必须是白名单。</div>
+            <div class="hint">{{.T "git.corsAllowCredentialsHintPrefix"}} <code>*</code>{{.T "git.corsAllowCredentialsHintSuffix"}}</div>
           </div>
           <div class="field">
-            <label>暴露响应头 <span class="key">CORS_EXPOSE_HEADERS</span></label>
+            <label>{{.T "git.corsExposeHeadersLabel"}} <span class="key">CORS_EXPOSE_HEADERS</span></label>
             <input type="text" name="corsExposeHeaders" value="{{.Git.CorsExposeHeaders}}" placeholder="Accept-Ranges, Content-Length, ..." />
-            <div class="hint">Range/分片下载需要暴露某些 Header。</div>
+            <div class="hint">{{.T "git.corsExposeHeadersHint"}}</div>
           </div>
         </div>
       </details>
 
       <details class="card accordion">
-        <summary>访问控制</summary>
+        <summary>{{.T "git.accessControlTitle"}}</summary>
         <div class="body">
           <div class="grid cols-2">
             <div class="field">
-              <label>封禁地区 <span class="key">BLOCKED_REGION</span></label>
+              <label>{{.T "git.blockedRegionsLabel"}} <span class="key">BLOCKED_REGION</span></label>
               <input type="text" name="blockedRegions" value="{{.BlockedRegionsCsv}}" placeholder="CN,HK" />
-              <div class="hint">依赖 Cloudflare 头 <code>CF-IPCountry</code>；本地直连通常为空。</div>
+              <div class="hint">{{.T "git.blockedRegionsHintPrefix"}} <code>CF-IPCountry</code>{{.T "common.semicolon"}}{{.T "git.blockedRegionsHintSuffix"}}{{.T "common.period"}}</div>
             </div>
             <div class="field">
-              <label>封禁 IP <span class="key">BLOCKED_IP_ADDRESS</span></label>
+              <label>{{.T "git.blockedIPsLabel"}} <span class="key">BLOCKED_IP_ADDRESS</span></label>
               <input type="text" name="blockedIpAddresses" value="{{.BlockedIPsCsv}}" placeholder="0.0.0.0,127.0.0.1" />
-              <div class="hint">匹配顺序：CF-Connecting-IP → X-Forwarded-For → RemoteAddr。</div>
+              <div class="hint">{{.T "git.blockedIPsHint"}}</div>
             </div>
           </div>
         </div>
       </details>
 
       <details class="card accordion">
-        <summary>内容替换（HTML）</summary>
+        <summary>{{.T "git.replaceTitle"}}</summary>
         <div class="body">
           <div class="field">
             <label>REPLACE_DICT JSON <span class="key">REPLACE_DICT</span></label>
             <textarea id="gitReplaceDictJson" name="replaceDictJson" data-json>{{.ReplaceDictJson}}</textarea>
             <div class="hint hint-line">
-              <span>占位符：<code>$upstream</code> / <code>$custom_domain</code>。</span>
+              <span>{{.T "git.replacePlaceholderPrefix"}} <code>$upstream</code> / <code>$custom_domain</code>{{.T "common.period"}}</span>
               <span class="spacer"></span>
-              <button class="btn" type="button" data-format-json="#gitReplaceDictJson">格式化 JSON</button>
+              <button class="btn" type="button" data-format-json="#gitReplaceDictJson">{{.T "common.formatJson"}}</button>
               <span class="json-msg" aria-live="polite"></span>
             </div>
-            <div class="hint">仅对 UTF-8 的 HTML 生效；二进制不会改写。</div>
+            <div class="hint">{{.T "git.replaceHint"}}</div>
           </div>
         </div>
       </details>
 
       <div class="card">
-        <h3>保存</h3>
+        <h3>{{.T "common.save"}}</h3>
         <div class="field">
-          <label>备注（可选）</label>
-          <input type="text" name="note" value="" placeholder="例如：调整 CORS / 更新 Token" />
+          <label>{{.T "common.noteOptional"}}</label>
+          <input type="text" name="note" value="" placeholder="{{.T "git.notePlaceholder"}}" />
         </div>
         <div class="btn-row">
-          <button class="btn primary" type="submit">保存</button>
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
         </div>
       </div>
     </form>
   </div>
-
-  <script>
-    (() => {
-      const ui = window.HazukiUI;
-      if (!ui) return;
-
-      const qs = ui.qs;
-
-      const getUpstream = () => (qs('input[name="upstream"]')?.value || "").trim() || "raw.githubusercontent.com";
-      const getUpstreamPath = () => {
-        let v = (qs('input[name="upstreamPath"]')?.value || "").trim();
-        if (!v) v = "/";
-        if (!v.startsWith("/")) v = "/" + v;
-        if (v.length > 1 && v.endsWith("/")) v = v.slice(0, -1);
-        return v;
-      };
-      const getUseHttps = () => !!qs('input[name="upstreamHttps"]')?.checked;
-
-      const joinPath = (prefix, reqPath) => {
-        if (!reqPath) reqPath = "/";
-        if (reqPath === "/" || reqPath === "") return prefix === "/" ? "" : prefix;
-        if (prefix === "/" || prefix === "") return reqPath;
-        return prefix + reqPath;
-      };
-
-      const guessType = (reqPath) => {
-        const base = ((reqPath || "").split("/").pop() || "").toLowerCase();
-        const dot = base.lastIndexOf(".");
-        if (dot === -1 || dot === base.length - 1) return "";
-        const ext = base.slice(dot + 1);
-        const map = {
-          js: "application/javascript",
-          mjs: "application/javascript",
-          cjs: "application/javascript",
-          jsx: "application/javascript",
-          css: "text/css",
-          html: "text/html",
-          htm: "text/html",
-          json: "application/json",
-          map: "application/json",
-          xml: "application/xml",
-          yml: "application/x-yaml",
-          yaml: "application/x-yaml",
-          toml: "application/toml",
-          txt: "text/plain",
-          md: "text/plain",
-          csv: "text/csv",
-          wasm: "application/wasm",
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          gif: "image/gif",
-          webp: "image/webp",
-          avif: "image/avif",
-          svg: "image/svg+xml",
-          ico: "image/x-icon",
-          mp4: "video/mp4",
-          webm: "video/webm",
-          mp3: "audio/mpeg",
-          wav: "audio/wav",
-          ogg: "audio/ogg",
-          m4a: "audio/mp4",
-          woff2: "font/woff2",
-          woff: "font/woff",
-          ttf: "font/ttf",
-          otf: "font/otf",
-          eot: "application/vnd.ms-fontobject",
-          m3u: "application/vnd.apple.mpegurl",
-          m3u8: "application/vnd.apple.mpegurl",
-        };
-        return map[ext] || "";
-      };
-
-      const updatePreview = () => {
-        const pathEl = qs("#gitPreviewPath");
-        const outEl = qs("#gitPreviewUrl");
-        const hintEl = qs("#gitPreviewHint");
-        if (!pathEl || !outEl || !hintEl) return;
-
-        let p = (pathEl.value || "").trim();
-        if (!p) p = "/";
-        if (!p.startsWith("/")) p = "/" + p;
-
-        const scheme = getUseHttps() ? "https" : "http";
-        const host = getUpstream();
-        const prefix = getUpstreamPath();
-        const finalPath = joinPath(prefix, p);
-
-        outEl.value = scheme + "://" + host + finalPath;
-
-        const t = guessType(p);
-        hintEl.textContent = t
-          ? "后缀猜测 Content-Type: " + t + "（用于缓存分类/补齐类型）"
-          : "无后缀：Content-Type 以实际上游响应为准。";
-      };
-
-      document.addEventListener("input", (e) => {
-        const t = e.target;
-        if (!t) return;
-        if (
-          t.id === "gitPreviewPath" ||
-          t.name === "upstream" ||
-          t.name === "upstreamPath" ||
-          t.name === "upstreamHttps"
-        ) {
-          updatePreview();
-        }
-      });
-
-      updatePreview();
-    })();
-  </script>
 {{end}}

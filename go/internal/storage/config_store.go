@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"hazuki-go/internal/model"
@@ -155,6 +156,11 @@ func (s *ConfigStore) GetRedactedConfig() (model.AppConfig, error) {
 	if cfg.Git.GithubToken != "" {
 		cfg.Git.GithubToken = "__SET__"
 	}
+	for i := range cfg.GitInstances {
+		if cfg.GitInstances[i].Git.GithubToken != "" {
+			cfg.GitInstances[i].Git.GithubToken = "__SET__"
+		}
+	}
 	if cfg.Torcherino.WorkerSecretKey != "" {
 		cfg.Torcherino.WorkerSecretKey = "__SET__"
 	}
@@ -217,6 +223,35 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 		if _, ok := clearSet["git.githubToken"]; !ok && next.Git.GithubToken == "" {
 			next.Git.GithubToken = current.Git.GithubToken
 		}
+
+		if len(next.GitInstances) > 0 {
+			curTokens := make(map[string]string, len(current.GitInstances))
+			for _, inst := range current.GitInstances {
+				id := strings.TrimSpace(inst.ID)
+				if id == "" {
+					continue
+				}
+				curTokens[strings.ToLower(id)] = inst.Git.GithubToken
+			}
+
+			for i := range next.GitInstances {
+				id := strings.TrimSpace(next.GitInstances[i].ID)
+				if id == "" {
+					continue
+				}
+				path := "gitInstances." + id + ".git.githubToken"
+				if _, ok := clearSet[path]; ok {
+					continue
+				}
+				if next.GitInstances[i].Git.GithubToken != "" {
+					continue
+				}
+				if tok, ok := curTokens[strings.ToLower(id)]; ok && tok != "" {
+					next.GitInstances[i].Git.GithubToken = tok
+				}
+			}
+		}
+
 		if _, ok := clearSet["torcherino.workerSecretKey"]; !ok && next.Torcherino.WorkerSecretKey == "" {
 			next.Torcherino.WorkerSecretKey = current.Torcherino.WorkerSecretKey
 		}
@@ -326,6 +361,17 @@ func encryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 			out.Git.GithubToken = enc
 		}
 
+		for i := range out.GitInstances {
+			if out.GitInstances[i].Git.GithubToken == "" {
+				continue
+			}
+			enc, err := crypto.EncryptString(out.GitInstances[i].Git.GithubToken)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.GitInstances[i].Git.GithubToken = enc
+		}
+
 		if out.Torcherino.WorkerSecretKey != "" {
 			enc, err := crypto.EncryptString(out.Torcherino.WorkerSecretKey)
 			if err != nil {
@@ -367,6 +413,17 @@ func decryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 				return model.AppConfig{}, err
 			}
 			out.Git.GithubToken = dec
+		}
+
+		for i := range out.GitInstances {
+			if out.GitInstances[i].Git.GithubToken == "" {
+				continue
+			}
+			dec, err := crypto.DecryptString(out.GitInstances[i].Git.GithubToken)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.GitInstances[i].Git.GithubToken = dec
 		}
 
 		if out.Torcherino.WorkerSecretKey != "" {

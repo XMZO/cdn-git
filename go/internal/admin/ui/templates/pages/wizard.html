@@ -1,26 +1,26 @@
 {{define "wizard"}}
   <div class="grid">
     <div class="card">
-      <h2>快速向导</h2>
-      <div class="muted small">一次性把三项核心服务配置好（保存后立即生效；端口需重启）。</div>
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "wizard.subtitle"}}</div>
     </div>
 
     <form class="form" method="post" action="/wizard">
       <details class="card accordion" open>
-        <summary>Torcherino <span class="muted small">（通用反代）</span></summary>
+        <summary>Torcherino <span class="muted small">{{.T "torcherino.tagline"}}</span></summary>
         <div class="body">
           <div class="field">
-            <label>默认目标 <span class="key">DEFAULT_TARGET</span></label>
+            <label>{{.T "torcherino.defaultTargetLabel"}} <span class="key">DEFAULT_TARGET</span></label>
             <input type="text" name="torcherinoDefaultTarget" value="{{.TorcherinoDefaultTarget}}" placeholder="example.pages.dev" />
-            <div class="hint">至少填写 DEFAULT_TARGET 或 HOST_MAPPING（二选一）。</div>
+            <div class="hint">{{.T "torcherino.needDefaultOrMap"}}</div>
           </div>
           <div class="field">
-            <label>HOST_MAPPING（JSON） <span class="key">HOST_MAPPING</span></label>
+            <label>{{.T "torcherino.hostMappingJsonLabel"}} <span class="key">HOST_MAPPING</span></label>
             <textarea id="wizardTorcherinoHostMappingJson" name="torcherinoHostMappingJson" data-json placeholder="{&quot;a.com&quot;:&quot;xxx.pages.dev&quot;}">{{.TorcherinoHostMappingJSON}}</textarea>
             <div class="hint hint-line">
-              <span>只填域名，不要带 http(s)://</span>
+              <span>{{.T "torcherino.hostMappingHintShort"}}</span>
               <span class="spacer"></span>
-              <button class="btn" type="button" data-format-json="#wizardTorcherinoHostMappingJson">格式化 JSON</button>
+              <button class="btn" type="button" data-format-json="#wizardTorcherinoHostMappingJson">{{.T "common.formatJson"}}</button>
               <span class="json-msg" aria-live="polite"></span>
             </div>
           </div>
@@ -29,35 +29,35 @@
             <div class="field">
               <label>WORKER_SECRET_HEADERS <span class="key">WORKER_SECRET_HEADERS</span></label>
               <input type="text" name="torcherinoWorkerSecretHeaders" value="{{.TorcherinoWorkerSecretHeaders}}" placeholder="x-forwarded-by-worker" />
-              <div class="hint">逗号分隔；留空则默认 <code>x-forwarded-by-worker</code>。</div>
+              <div class="hint">{{.T "torcherino.workerSecretHeadersHint"}} <code>x-forwarded-by-worker</code>{{.T "common.period"}}</div>
             </div>
             <div class="field">
               <label>WORKER_SECRET_KEY <span class="key">WORKER_SECRET_KEY</span></label>
-              <input id="wizardWorkerSecretKey" type="password" name="torcherinoWorkerSecretKey" value="" placeholder="{{if .SecretIsSet}}已设置（留空保持）{{else}}留空=不启用{{end}}" />
+              <input id="wizardWorkerSecretKey" type="password" name="torcherinoWorkerSecretKey" value="" placeholder="{{if .SecretIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderEmptyDisable"}}{{end}}" />
               <div class="hint hint-line">
                 <span class="spacer"></span>
                 <label class="pill" style="font-weight:800;">
                   <input type="checkbox" data-toggle-password="#wizardWorkerSecretKey" />
-                  显示
+                  {{.T "common.show"}}
                 </label>
                 <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
                   <input type="checkbox" name="torcherinoClearWorkerSecretKey" />
-                  清空
+                  {{.T "common.clear"}}
                 </label>
               </div>
             </div>
           </div>
 
           <div class="field">
-            <label>WORKER_SECRET_HEADER_MAP（JSON） <span class="key">WORKER_SECRET_HEADER_MAP</span></label>
+            <label>{{.T "torcherino.workerSecretHeaderMapLabel"}} <span class="key">WORKER_SECRET_HEADER_MAP</span></label>
             <textarea id="wizardWorkerSecretHeaderMapJson" name="torcherinoWorkerSecretHeaderMapJson" data-json>{{.TorcherinoWorkerSecretHeaderMap}}</textarea>
             <div class="hint hint-line">
-              <span><code>__SET__</code> 表示沿用已保存的值。</span>
+              <span><code>__SET__</code> {{.T "torcherino.setPlaceholderHint"}}</span>
               <span class="spacer"></span>
-              <button class="btn" type="button" data-format-json="#wizardWorkerSecretHeaderMapJson">格式化 JSON</button>
+              <button class="btn" type="button" data-format-json="#wizardWorkerSecretHeaderMapJson">{{.T "common.formatJson"}}</button>
               <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
                 <input type="checkbox" name="torcherinoClearWorkerSecretHeaderMap" />
-                清空 HeaderMap
+                {{.T "common.clearHeaderMap"}}
               </label>
               <span class="json-msg" aria-live="polite"></span>
             </div>
@@ -66,7 +66,7 @@
       </details>
 
       <details class="card accordion" open>
-        <summary>jsDelivr 缓存 <span class="muted small">（cdnjs）</span></summary>
+        <summary>{{.T "nav.cdnjs"}} <span class="muted small">{{.T "cdnjs.tagline"}}</span></summary>
         <div class="body">
           <div class="grid cols-2">
             <div class="field">
@@ -74,11 +74,26 @@
               <input type="text" name="cdnjsDefaultGhUser" value="{{.CdnjsDefaultGhUser}}" placeholder="XMZO" />
             </div>
             <div class="field">
-              <label>ALLOWED_GH_USERS <span class="key">ALLOWED_GH_USERS</span></label>
-              <input type="text" name="cdnjsAllowedGhUsers" value="{{.CdnjsAllowedGhUsers}}" placeholder="XMZO,starsei" />
+              <label>GH_USER_POLICY <span class="key">GH_USER_POLICY</span></label>
+              <select name="cdnjsGhUserPolicy">
+                <option value="allowlist" {{if or (eq .CdnjsGhUserPolicy "") (eq .CdnjsGhUserPolicy "allowlist")}}selected{{end}}>{{.T "cdnjs.policy.allowlist"}}</option>
+                <option value="denylist" {{if eq .CdnjsGhUserPolicy "denylist"}}selected{{end}}>{{.T "cdnjs.policy.denylist"}}</option>
+              </select>
             </div>
           </div>
-          <div class="hint">至少填写 DEFAULT_GH_USER 或 ALLOWED_GH_USERS（二选一）。</div>
+
+          <div class="grid cols-2" style="margin-top:10px;">
+            <div class="field">
+              <label>ALLOWED_GH_USERS <span class="key">ALLOWED_GH_USERS</span></label>
+              <input type="text" name="cdnjsAllowedGhUsers" value="{{.CdnjsAllowedGhUsers}}" placeholder="XMZO,starsei" />
+              <div class="hint">{{.T "cdnjs.allowedUsersHint"}}</div>
+            </div>
+            <div class="field">
+              <label>BLOCKED_GH_USERS <span class="key">BLOCKED_GH_USERS</span></label>
+              <input type="text" name="cdnjsBlockedGhUsers" value="{{.CdnjsBlockedGhUsers}}" placeholder="baduser1,baduser2" />
+              <div class="hint">{{.T "cdnjs.blockedUsersHint"}}</div>
+            </div>
+          </div>
 
           <div class="grid cols-2" style="margin-top:10px;">
             <div class="field">
@@ -97,26 +112,26 @@
       </details>
 
       <details class="card accordion" open>
-        <summary>GitHub Raw 代理</summary>
+        <summary>{{.T "nav.git"}}</summary>
         <div class="body">
           <div class="field">
             <label>UPSTREAM_PATH <span class="key">UPSTREAM_PATH</span></label>
             <input type="text" name="gitUpstreamPath" value="{{.GitUpstreamPath}}" placeholder="/owner/repo/branch" />
-            <div class="hint">至少 3 段：<code>/owner/repo/branch</code>。</div>
+            <div class="hint">{{.T "git.upstreamPathHint"}} <code>/owner/repo/branch</code>{{.T "common.period"}}</div>
           </div>
 
           <div class="field">
             <label>GITHUB_TOKEN <span class="key">GITHUB_TOKEN</span></label>
-            <input id="wizardGitToken" type="password" name="gitGithubToken" value="" placeholder="{{if .TokenIsSet}}已设置（留空保持）{{else}}留空=不设置{{end}}" />
+            <input id="wizardGitToken" type="password" name="gitGithubToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderEmptyNoToken"}}{{end}}" />
             <div class="hint hint-line">
               <span class="spacer"></span>
               <label class="pill" style="font-weight:800;">
                 <input type="checkbox" data-toggle-password="#wizardGitToken" />
-                显示
+                {{.T "common.show"}}
               </label>
               <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
                 <input type="checkbox" name="gitClearGithubToken" />
-                清空 GITHUB_TOKEN
+                {{.T "git.clearToken"}}
               </label>
             </div>
           </div>
@@ -124,10 +139,10 @@
       </details>
 
       <div class="card">
-        <h3>保存</h3>
+        <h3>{{.T "common.save"}}</h3>
         <div class="btn-row">
-          <button class="btn primary" type="submit">保存配置</button>
-          <a class="btn" href="/">返回概览</a>
+          <button class="btn primary" type="submit">{{.T "wizard.saveConfig"}}</button>
+          <a class="btn" href="/">{{.T "wizard.backToDashboard"}}</a>
         </div>
       </div>
     </form>

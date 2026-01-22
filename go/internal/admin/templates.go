@@ -51,6 +51,15 @@ func mustLoadTemplates() *template.Template {
 			}
 			return template.HTML(buf.String()), nil
 		},
+		"statusCtx": func(root any, status serviceStatus) any {
+			return struct {
+				Root   any
+				Status serviceStatus
+			}{
+				Root:   root,
+				Status: status,
+			}
+		},
 	})
 
 	template.Must(t.ParseFS(

@@ -152,8 +152,13 @@ code,
   gap: 10px;
   padding: 10px 10px;
   border-radius: 12px;
+  position: relative;
+  border: 1px solid transparent;
   color: var(--text);
   opacity: 0.88;
+  overflow: hidden;
+  transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .nav a:hover {
@@ -166,12 +171,45 @@ code,
   background: rgba(59, 130, 246, 0.16);
   border: 1px solid rgba(59, 130, 246, 0.25);
   opacity: 1;
+  transform: translateX(2px);
 }
 
 .nav .icon {
   width: 16px;
   height: 16px;
   opacity: 0.9;
+}
+
+.nav a.hz-pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.18),
+    transparent
+  );
+  transform: translateX(-60%);
+  animation: hz-shimmer 1100ms ease-in-out infinite;
+}
+
+@keyframes hz-shimmer {
+  from {
+    transform: translateX(-65%);
+  }
+  to {
+    transform: translateX(65%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav a.hz-pending::after {
+    animation: none !important;
+    transform: translateX(0);
+    opacity: 0.12;
+  }
 }
 
 .sidebar .footer {
@@ -185,6 +223,7 @@ code,
 .main {
   flex: 1;
   min-width: 0;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -199,6 +238,45 @@ code,
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.75),
+    transparent
+  );
+  transform: translateX(-70%);
+}
+
+body.hz-loading .topbar::after {
+  opacity: 1;
+  animation: hz-progress 900ms ease-in-out infinite;
+}
+
+@keyframes hz-progress {
+  from {
+    transform: translateX(-80%);
+  }
+  to {
+    transform: translateX(80%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.hz-loading .topbar::after {
+    animation: none !important;
+    transform: translateX(0);
+  }
 }
 
 @media (prefers-color-scheme: light) {
@@ -229,6 +307,87 @@ code,
   max-width: 1120px;
   margin: 0 auto;
   padding: 18px 20px 64px;
+}
+
+#pjax-root {
+  transition: opacity 200ms ease, transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+#pjax-root.hz-leave {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+#pjax-root.hz-enter {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+body.hz-loading #pjax-root {
+  opacity: 0.86;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pjax-root {
+    transition: none !important;
+  }
+}
+
+.hz-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.hz-modal[hidden] {
+  display: none;
+}
+
+.hz-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .hz-modal-backdrop {
+    backdrop-filter: blur(8px);
+  }
+}
+
+.hz-modal-card {
+  position: relative;
+  width: min(520px, 100%);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  transform: translateY(0);
+  opacity: 1;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.hz-modal-title {
+  font-weight: 900;
+  margin: 0 0 8px;
+}
+
+.hz-modal-detail {
+  white-space: pre-wrap;
+}
+
+.hz-modal.hz-enter .hz-modal-card {
+  transform: translateY(10px);
+  opacity: 0;
+}
+
+body.hz-modal-open {
+  overflow: hidden;
 }
 
 .flash {

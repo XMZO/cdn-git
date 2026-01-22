@@ -46,4 +46,3 @@ func (adminModule) Start(_ context.Context, env *runtimeEnv, fatalErrCh chan<- e
 		},
 	}, nil
 }
-

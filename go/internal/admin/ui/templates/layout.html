@@ -1,6 +1,6 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{.HTMLLang}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,9 +8,13 @@
     <link rel="stylesheet" href="/assets/style.css" />
     <link rel="icon" href="/assets/fav.png" type="image/png" sizes="512x512" />
     <link rel="apple-touch-icon" href="/assets/fav.png" />
+    <script>
+      window.HazukiLang = {{printf "%q" .LangCode}};
+      window.HazukiI18n = {{.JSI18n}};
+    </script>
     <script src="/assets/app.js" defer></script>
   </head>
-  <body data-page="{{.BodyTemplate}}">
+  <body data-page="{{.BodyTemplate}}" data-lang="{{.LangCode}}">
     <div class="app">
       {{if .User}}
         <aside class="sidebar">
@@ -18,12 +22,12 @@
             <img class="logo" src="/assets/avatar.png" alt="" width="40" height="40" aria-hidden="true" />
             <div>Hazuki</div>
           </div>
-          <div class="meta">Hazuki 管理面板（本地管理员）。</div>
+          <div class="meta">{{.T "layout.meta"}}</div>
           {{template "nav" .}}
           <div class="footer">
-            <div class="pill">当前用户：<code>{{.User.Username}}</code></div>
+            <div class="pill">{{.T "layout.currentUser"}}：<code>{{.User.Username}}</code></div>
             <form method="post" action="/logout" style="margin:0">
-              <button class="btn" type="submit">退出登录</button>
+              <button class="btn" type="submit">{{.T "layout.logout"}}</button>
             </form>
           </div>
         </aside>
@@ -34,34 +38,50 @@
           <div>
             <div class="title">{{.Title}}</div>
             {{if .User}}
-              <div class="sub">保存后会热更新立即生效；端口修改需要重启进程。</div>
+              <div class="sub">{{.T "layout.subAuthed"}}</div>
             {{else}}
-              <div class="sub">Hazuki 管理面板</div>
+              <div class="sub">{{.T "layout.subGuest"}}</div>
             {{end}}
           </div>
 
           <div class="actions">
+            <a class="btn {{if .IsLang "zh"}}primary{{end}}" href="/lang?to=zh" data-no-pjax="1">{{.T "layout.lang.zh"}}</a>
+            <a class="btn {{if .IsLang "en"}}primary{{end}}" href="/lang?to=en" data-no-pjax="1">{{.T "layout.lang.en"}}</a>
             {{if .User}}
               <details class="mobile-nav">
-                <summary class="btn">菜单</summary>
+                <summary class="btn">{{.T "layout.menu"}}</summary>
                 <div class="panel">
                   {{template "nav" .}}
                   <div style="height:10px;"></div>
                   <form method="post" action="/logout" style="margin:0">
-                    <button class="btn" type="submit">退出 ({{.User.Username}})</button>
+                    <button class="btn" type="submit">{{.T "layout.logout"}} ({{.User.Username}})</button>
                   </form>
                 </div>
               </details>
             {{else}}
-              <a class="btn" href="/login">登录</a>
+              <a class="btn" href="/login">{{.T "layout.login"}}</a>
             {{end}}
           </div>
         </header>
 
         <main class="container">
-          {{template "flash" .}}
-          {{render .BodyTemplate .}}
+          <div id="pjax-root">
+            {{template "flash" .}}
+            {{render .BodyTemplate .}}
+          </div>
         </main>
+      </div>
+    </div>
+
+    <div id="hz-modal" class="hz-modal" hidden>
+      <div class="hz-modal-backdrop" data-hz-modal-cancel></div>
+      <div class="hz-modal-card" role="dialog" aria-modal="true" aria-labelledby="hz-modal-title" aria-describedby="hz-modal-detail">
+        <div class="hz-modal-title" id="hz-modal-title">{{.T "modal.confirmTitle"}}</div>
+        <div class="hz-modal-detail muted small" id="hz-modal-detail"></div>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn" type="button" data-hz-modal-cancel>{{.T "modal.cancel"}}</button>
+          <button class="btn primary" type="button" data-hz-modal-ok>{{.T "modal.ok"}}</button>
+        </div>
       </div>
     </div>
   </body>

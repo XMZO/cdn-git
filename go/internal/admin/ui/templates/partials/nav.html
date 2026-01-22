@@ -1,41 +1,41 @@
 {{define "nav"}}
   <nav class="nav" aria-label="Hazuki Admin Navigation">
-    <div class="section">通用</div>
+    <div class="section">{{.T "nav.section.common"}}</div>
     <a href="/" class="{{if eq .BodyTemplate "dashboard"}}active{{end}}">
-      <span>概览</span>
+      <span>{{.T "nav.dashboard"}}</span>
     </a>
     <a href="/system" class="{{if eq .BodyTemplate "system"}}active{{end}}">
-      <span>系统</span>
+      <span>{{.T "nav.system"}}</span>
     </a>
     <a href="/wizard" class="{{if eq .BodyTemplate "wizard"}}active{{end}}">
-      <span>快速向导</span>
+      <span>{{.T "nav.wizard"}}</span>
     </a>
 
-    <div class="section">服务</div>
+    <div class="section">{{.T "nav.section.services"}}</div>
     <a href="/config/torcherino" class="{{if eq .BodyTemplate "torcherino"}}active{{end}}">
-      <span>Torcherino</span>
+      <span>{{.T "nav.torcherino"}}</span>
     </a>
     <a href="/config/cdnjs" class="{{if eq .BodyTemplate "cdnjs"}}active{{end}}">
-      <span>jsDelivr 缓存</span>
+      <span>{{.T "nav.cdnjs"}}</span>
     </a>
     <a href="/config/git" class="{{if eq .BodyTemplate "git"}}active{{end}}">
-      <span>GitHub Raw</span>
+      <span>{{.T "nav.git"}}</span>
     </a>
 
-    <div class="section">数据</div>
+    <div class="section">{{.T "nav.section.data"}}</div>
     <a href="/config/versions" class="{{if eq .BodyTemplate "versions"}}active{{end}}">
-      <span>版本 & 备份</span>
+      <span>{{.T "nav.versions"}}</span>
     </a>
     <a href="/config/import" class="{{if eq .BodyTemplate "import"}}active{{end}}">
-      <span>导入备份</span>
+      <span>{{.T "nav.import"}}</span>
     </a>
-    <a href="/config/export">
-      <span>下载备份</span>
+    <a href="/config/export" data-confirm-download="{{.T "backup.confirmTitle"}}" data-confirm-detail="{{.T "backup.confirmDetail"}}">
+      <span>{{.T "nav.export"}}</span>
     </a>
 
-    <div class="section">账号</div>
+    <div class="section">{{.T "nav.section.account"}}</div>
     <a href="/account" class="{{if eq .BodyTemplate "account"}}active{{end}}">
-      <span>账号</span>
+      <span>{{.T "nav.account"}}</span>
     </a>
   </nav>
 {{end}}

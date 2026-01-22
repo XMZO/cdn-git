@@ -22,7 +22,9 @@ type RuntimeConfig struct {
 
 	AssetURL string
 
+	GhUserPolicy string // allowlist (default) | denylist
 	AllowedUsers map[string]struct{}
+	BlockedUsers map[string]struct{}
 	DefaultUser  string
 
 	RedisHost string
@@ -50,6 +52,14 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 		return RuntimeConfig{}, errors.New("cdnjs.assetUrl host is empty")
 	}
 
+	policy := strings.ToLower(strings.TrimSpace(cfg.Cdnjs.GhUserPolicy))
+	if policy == "" {
+		policy = "allowlist"
+	}
+	if policy != "allowlist" && policy != "denylist" {
+		return RuntimeConfig{}, errors.New("cdnjs.ghUserPolicy must be 'allowlist' or 'denylist'")
+	}
+
 	allowed := make(map[string]struct{}, len(cfg.Cdnjs.AllowedGhUsers))
 	for _, raw := range cfg.Cdnjs.AllowedGhUsers {
 		s := strings.ToLower(strings.TrimSpace(raw))
@@ -57,6 +67,15 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 			continue
 		}
 		allowed[s] = struct{}{}
+	}
+
+	blocked := make(map[string]struct{}, len(cfg.Cdnjs.BlockedGhUsers))
+	for _, raw := range cfg.Cdnjs.BlockedGhUsers {
+		s := strings.ToLower(strings.TrimSpace(raw))
+		if s == "" {
+			continue
+		}
+		blocked[s] = struct{}{}
 	}
 
 	redisHost := strings.TrimSpace(cfg.Cdnjs.Redis.Host)
@@ -84,7 +103,9 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 
 		AssetURL: assetURL,
 
+		GhUserPolicy: policy,
 		AllowedUsers: allowed,
+		BlockedUsers: blocked,
 		DefaultUser:  strings.TrimSpace(cfg.Cdnjs.DefaultGhUser),
 
 		RedisHost: redisHost,
@@ -127,17 +148,24 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		}
 
 		payload := map[string]any{
-			"ok":        true,
-			"service":   "cdnjs",
-			"host":      runtime.Host,
-			"port":      runtime.Port,
-			"assetUrl":  runtime.AssetURL,
+			"ok":             true,
+			"service":        "cdnjs",
+			"host":           runtime.Host,
+			"port":           runtime.Port,
+			"assetUrl":       runtime.AssetURL,
+			"ghUserPolicy":   runtime.GhUserPolicy,
 			"defaultUserSet": strings.TrimSpace(runtime.DefaultUser) != "",
 			"allowedUsersCount": func() int {
 				if runtime.AllowedUsers == nil {
 					return 0
 				}
 				return len(runtime.AllowedUsers)
+			}(),
+			"blockedUsersCount": func() int {
+				if runtime.BlockedUsers == nil {
+					return 0
+				}
+				return len(runtime.BlockedUsers)
 			}(),
 			"redis": map[string]any{
 				"host":   runtime.RedisHost,
@@ -169,13 +197,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 			http.NotFound(w, r)
 			return
 		}
-		if _, ok := runtime.AllowedUsers[strings.ToLower(user)]; !ok {
+		if ok, msg := canAccessGhUser(user, runtime); !ok {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusForbidden)
 			if r.Method == http.MethodHead {
 				return
 			}
-			_, _ = w.Write([]byte(`Access denied: User "` + user + `" is not authorized`))
+			_, _ = w.Write([]byte(msg))
 			return
 		}
 
@@ -221,56 +249,77 @@ func parseGhPath(path string) (user, filePath string, ok bool) {
 	return rest[:idx], rest[idx+1:], true
 }
 
+func canAccessGhUser(user string, runtime RuntimeConfig) (ok bool, message string) {
+	userKey := strings.ToLower(strings.TrimSpace(user))
+	policy := strings.ToLower(strings.TrimSpace(runtime.GhUserPolicy))
+	if policy == "" {
+		policy = "allowlist"
+	}
+
+	switch policy {
+	case "denylist":
+		if _, blocked := runtime.BlockedUsers[userKey]; blocked {
+			return false, `Access denied: User "` + user + `" is blocked`
+		}
+		return true, ""
+	default: // allowlist
+		if _, allowed := runtime.AllowedUsers[userKey]; allowed {
+			return true, ""
+		}
+		return false, `Access denied: User "` + user + `" is not authorized`
+	}
+}
+
 const builtInDefaultTTLSeconds = 86400
 
 var builtInCacheTTLSeconds = map[string]int{
 	// Node defaults (kept for compatibility).
-	"js":   2592000,
-	"css":  2592000,
-	"png":  2592000,
-	"jpg":  2592000,
-	"jpeg": 2592000,
-	"gif":  2592000,
-	"svg":  2592000,
-	"ico":  2592000,
-	"woff": 2592000,
+	"js":    2592000,
+	"css":   2592000,
+	"png":   2592000,
+	"jpg":   2592000,
+	"jpeg":  2592000,
+	"gif":   2592000,
+	"svg":   2592000,
+	"ico":   2592000,
+	"woff":  2592000,
 	"woff2": 2592000,
-	"ttf":  2592000,
-	"eot":  2592000,
-	"webp": 2592000,
-	"moc3": 2592000,
-	"map":  2592000,
-	"cur":  2592000,
-	"mp4":  604800,
-	"mp3":  604800,
-	"pdf":  604800,
-	"json": 86400,
-	"xml":  86400,
-	"txt":  86400,
-	"html": 3600,
+	"ttf":   2592000,
+	"eot":   2592000,
+	"webp":  2592000,
+	"moc3":  2592000,
+	"map":   2592000,
+	"cur":   2592000,
+	"mp4":   604800,
+	"mp3":   604800,
+	"pdf":   604800,
+	"json":  86400,
+	"xml":   86400,
+	"txt":   86400,
+	"html":  3600,
 
 	// Extra common extensions (Go version is intentionally more complete).
-	"mjs":  2592000,
-	"cjs":  2592000,
-	"wasm": 2592000,
-	"avif": 2592000,
-	"apng": 2592000,
-	"bmp":  2592000,
-	"tif":  2592000,
-	"tiff": 2592000,
-	"otf":  2592000,
-	"svgz": 2592000,
-	"webm": 604800,
-	"m4a":  604800,
-	"aac":  604800,
-	"ogg":  604800,
-	"wav":  604800,
-	"flac": 604800,
-	"htm":  3600,
-	"md":   86400,
-	"yml":  86400,
-	"yaml": 86400,
-	"toml": 86400,
+	"mjs":   2592000,
+	"cjs":   2592000,
+	"wasm":  2592000,
+	"avif":  2592000,
+	"apng":  2592000,
+	"bmp":   2592000,
+	"tif":   2592000,
+	"tiff":  2592000,
+	"otf":   2592000,
+	"svgz":  2592000,
+	"webm":  604800,
+	"m4a":   604800,
+	"aac":   604800,
+	"ogg":   604800,
+	"wav":   604800,
+	"flac":  604800,
+	"htm":   3600,
+	"md":    86400,
+	"yml":   86400,
+	"yaml":  86400,
+	"toml":  86400,
 	"jsonc": 86400,
 }
 

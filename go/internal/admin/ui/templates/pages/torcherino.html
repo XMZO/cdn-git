@@ -1,53 +1,61 @@
 {{define "torcherino"}}
   <div class="grid">
     <div class="card">
-      <h2>Torcherino（通用反代）</h2>
-      <div class="muted small">按 Host 映射/默认目标把请求转发到上游（固定 https）。会重写 JSON/HTML/重定向中的 <code>*.pages.dev</code>/<code>*.hf.space</code> 为当前站点。</div>
+      <h2>{{.Title}} <span class="muted small">{{.T "torcherino.tagline"}}</span></h2>
+      <div class="muted small">{{.T "torcherino.subtitle"}}</div>
       <div class="btn-row">
-        <span class="pill">服务地址：<code>{{.TorcherinoBaseURL}}</code></span>
-        {{if .TorcherinoStatus.Status}}{{template "serviceStatusPill" .TorcherinoStatus}}{{end}}
-        <a class="btn" href="{{.TorcherinoHealthURL}}" target="_blank" rel="noreferrer">打开 /_hazuki/health</a>
+        <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.TorcherinoBaseURL}}</code></span>
+        {{if .TorcherinoStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .TorcherinoStatus)}}{{end}}
+        <a class="btn" href="{{.TorcherinoHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
       </div>
       {{if and (eq .TorcherinoStatus.Status "error") .TorcherinoStatus.Error}}
-        <div class="muted small" style="margin-top:10px;">Health 错误：{{.TorcherinoStatus.Error}}</div>
+        <div class="muted small" style="margin-top:10px;">{{.T "common.healthErrorPrefix"}}：{{.TorcherinoStatus.Error}}</div>
       {{end}}
     </div>
 
     <form class="form" method="post" action="/config/torcherino">
       <div class="card">
-        <h3>基础配置</h3>
+        <h3>{{.T "common.basicConfig"}}</h3>
         <div class="grid cols-2">
           <div class="field">
-            <label>端口 <span class="key">ports.torcherino</span></label>
+            <label>{{.T "common.port"}} <span class="key">ports.torcherino</span></label>
             <input type="text" name="torcherinoPort" value="{{.TorcherinoPortValue}}" placeholder="3000" />
-            <div class="hint">修改端口需要重启。</div>
+            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
           </div>
           <div class="field">
-            <label>默认目标 <span class="key">DEFAULT_TARGET</span></label>
+            <label>{{.T "torcherino.defaultTargetLabel"}} <span class="key">DEFAULT_TARGET</span></label>
             <input type="text" name="defaultTarget" value="{{.DefaultTargetValue}}" placeholder="xxx.pages.dev" />
-            <div class="hint">当 HOST_MAPPING 未命中时使用；至少填 DEFAULT_TARGET 或 HOST_MAPPING（二选一）。</div>
+            <div class="hint">{{.T "torcherino.defaultTargetHint"}}</div>
           </div>
+        </div>
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="serviceEnabled" {{if not .Torcherino.Disabled}}checked{{end}} />
+            <input type="hidden" name="serviceEnabled" value="0" />
+            {{.T "common.enableService"}} <span class="key">torcherino.disabled</span>
+          </label>
+          <div class="hint">{{.T "torcherino.serviceToggleHint"}}</div>
         </div>
       </div>
 
       <details class="card accordion" open>
-        <summary>预览 <span class="muted small">（不会实际请求）</span></summary>
+        <summary>{{.T "common.preview"}} <span class="muted small">{{.T "common.previewNoRequest"}}</span></summary>
         <div class="body">
-          <div class="muted small">输入 Host + Path，查看最终会上游到哪个目标（Torcherino 固定走 https）。</div>
+          <div class="muted small">{{.T "torcherino.previewHint"}}</div>
           <div class="grid cols-2" style="margin-top:10px;">
             <div class="field">
-              <label>Host</label>
+              <label>{{.T "common.host"}}</label>
               <input type="text" id="torcherinoPreviewHost" value="example.com" placeholder="example.com" />
-              <div class="hint">匹配逻辑：优先命中 <code>HOST_MAPPING[strings.ToLower(host)]</code>，否则走 DEFAULT_TARGET。</div>
+              <div class="hint">{{.T "torcherino.matchLogicHintPrefix"}} <code>HOST_MAPPING[strings.ToLower(host)]</code>{{.T "torcherino.matchLogicHintSuffix"}} <code>DEFAULT_TARGET</code>{{.T "common.period"}}</div>
             </div>
             <div class="field">
-              <label>Path</label>
+              <label>{{.T "common.path"}}</label>
               <input type="text" id="torcherinoPreviewPath" value="/_hazuki/health" placeholder="/path" />
             </div>
           </div>
 
           <div class="field">
-            <label>预览结果</label>
+            <label>{{.T "torcherino.previewResult"}}</label>
             <div class="grid cols-2">
               <input type="text" id="torcherinoPreviewTarget" value="" class="readonly" readonly />
               <input type="text" id="torcherinoPreviewUrl" value="" class="readonly" readonly />
@@ -58,15 +66,15 @@
       </details>
 
       <details class="card accordion" open>
-        <summary>HOST_MAPPING <span class="muted small">（按 Host 精确映射）</span></summary>
+        <summary>HOST_MAPPING <span class="muted small">{{.T "torcherino.hostMappingTagline"}}</span></summary>
         <div class="body">
           <div class="field">
-            <label>映射表（JSON） <span class="key">HOST_MAPPING</span></label>
+            <label>{{.T "torcherino.hostMappingJsonLabel"}} <span class="key">HOST_MAPPING</span></label>
             <textarea id="hostMappingJson" name="hostMappingJson" data-json>{{.HostMappingJSON}}</textarea>
             <div class="hint hint-line">
-              <span>格式：<code>{"a.com":"xxx.pages.dev"}</code>；不要带协议。</span>
+              <span>{{.T "torcherino.hostMappingFormatPrefix"}} <code>{"a.com":"xxx.pages.dev"}</code>{{.T "common.semicolon"}}{{.T "torcherino.hostMappingFormatSuffix"}}{{.T "common.period"}}</span>
               <span class="spacer"></span>
-              <button class="btn" type="button" data-format-json="#hostMappingJson">格式化 JSON</button>
+              <button class="btn" type="button" data-format-json="#hostMappingJson">{{.T "common.formatJson"}}</button>
               <span class="json-msg" aria-live="polite"></span>
             </div>
           </div>
@@ -74,41 +82,41 @@
       </details>
 
       <details class="card accordion" open>
-        <summary>Worker Secret <span class="muted small">（可选）</span></summary>
+        <summary>Worker Secret <span class="muted small">{{.T "common.optionalTag"}}</span></summary>
         <div class="body">
           <div class="grid cols-2">
             <div class="field">
-              <label>保护用 Header 列表 <span class="key">WORKER_SECRET_HEADERS</span></label>
+              <label>{{.T "torcherino.workerSecretHeadersLabel"}} <span class="key">WORKER_SECRET_HEADERS</span></label>
               <input type="text" name="workerSecretHeaders" value="{{.WorkerSecretHeadersCsvValue}}" placeholder="x-forwarded-by-worker" />
-              <div class="hint">逗号分隔；留空则默认 <code>x-forwarded-by-worker</code>。</div>
+              <div class="hint">{{.T "torcherino.workerSecretHeadersHint"}} <code>x-forwarded-by-worker</code>{{.T "common.period"}}</div>
             </div>
             <div class="field">
-              <label>密钥 <span class="key">WORKER_SECRET_KEY</span></label>
-              <input id="workerSecretKeyInput" type="password" name="workerSecretKey" value="" placeholder="{{if .SecretIsSet}}已设置（留空保持）{{else}}留空=不启用{{end}}" />
+              <label>{{.T "torcherino.workerSecretKeyLabel"}} <span class="key">WORKER_SECRET_KEY</span></label>
+              <input id="workerSecretKeyInput" type="password" name="workerSecretKey" value="" placeholder="{{if .SecretIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderEmptyDisable"}}{{end}}" />
               <div class="hint hint-line">
                 <span class="spacer"></span>
                 <label class="pill" style="font-weight:800;">
                   <input type="checkbox" data-toggle-password="#workerSecretKeyInput" />
-                  显示
+                  {{.T "common.show"}}
                 </label>
                 <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
                   <input type="checkbox" name="clearWorkerSecretKey" />
-                  清空
+                  {{.T "common.clear"}}
                 </label>
               </div>
             </div>
           </div>
 
           <div class="field">
-            <label>HeaderMap（JSON） <span class="key">WORKER_SECRET_HEADER_MAP</span></label>
+            <label>{{.T "torcherino.workerSecretHeaderMapLabel"}} <span class="key">WORKER_SECRET_HEADER_MAP</span></label>
             <textarea id="workerSecretHeaderMapJson" name="workerSecretHeaderMapJson" data-json>{{.WorkerSecretHeaderMapJSONValue}}</textarea>
             <div class="hint hint-line">
-              <span><code>__SET__</code> 表示沿用已保存的值。</span>
+              <span><code>__SET__</code> {{.T "torcherino.setPlaceholderHint"}}</span>
               <span class="spacer"></span>
-              <button class="btn" type="button" data-format-json="#workerSecretHeaderMapJson">格式化 JSON</button>
+              <button class="btn" type="button" data-format-json="#workerSecretHeaderMapJson">{{.T "common.formatJson"}}</button>
               <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
                 <input type="checkbox" name="clearWorkerSecretHeaderMap" />
-                清空
+                {{.T "common.clear"}}
               </label>
               <span class="json-msg" aria-live="polite"></span>
             </div>
@@ -117,88 +125,11 @@
       </details>
 
       <div class="card">
-        <h3>保存</h3>
+        <h3>{{.T "common.save"}}</h3>
         <div class="btn-row">
-          <button class="btn primary" type="submit">保存</button>
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
         </div>
       </div>
     </form>
   </div>
-
-  <script>
-    (() => {
-      const ui = window.HazukiUI;
-      if (!ui) return;
-
-      const qs = ui.qs;
-
-      const normHost = (h) => (h || "").toString().trim().toLowerCase();
-      const normPath = (p) => {
-        let v = (p || "").toString().trim();
-        if (!v) v = "/";
-        if (!v.startsWith("/")) v = "/" + v;
-        return v;
-      };
-
-      const parseMapping = () => {
-        const raw = (qs("#hostMappingJson")?.value || "").trim();
-        if (!raw) return { ok: true, map: {} };
-        try {
-          const v = JSON.parse(raw);
-          if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, err: "HOST_MAPPING 不是对象" };
-          return { ok: true, map: v };
-        } catch (e) {
-          return { ok: false, err: "HOST_MAPPING JSON 无效：" + (e && e.message ? e.message : "parse error") };
-        }
-      };
-
-      const update = () => {
-        const host = normHost(qs("#torcherinoPreviewHost")?.value || "");
-        const path = normPath(qs("#torcherinoPreviewPath")?.value || "");
-        const defTarget = (qs('input[name="defaultTarget"]')?.value || "").trim();
-
-        const targetEl = qs("#torcherinoPreviewTarget");
-        const urlEl = qs("#torcherinoPreviewUrl");
-        const hintEl = qs("#torcherinoPreviewHint");
-        if (!targetEl || !urlEl || !hintEl) return;
-
-        const mapping = parseMapping();
-        if (!mapping.ok) {
-          targetEl.value = "";
-          urlEl.value = "";
-          hintEl.textContent = mapping.err || "HOST_MAPPING 解析失败";
-          return;
-        }
-
-        const fromMap = host ? (mapping.map && mapping.map[host] ? String(mapping.map[host]) : "") : "";
-        const target = (fromMap || defTarget || "").trim();
-
-        if (!target) {
-          targetEl.value = "";
-          urlEl.value = "";
-          hintEl.textContent = "DEFAULT_TARGET 为空且 HOST_MAPPING 未命中：运行时会返回 502。";
-          return;
-        }
-
-        targetEl.value = target + (fromMap ? "（命中映射）" : "（默认）");
-        urlEl.value = "https://" + target + path;
-        hintEl.textContent = "注意：Torcherino 会把上游响应中的 *.pages.dev / *.hf.space 重写为当前站点。";
-      };
-
-      document.addEventListener("input", (e) => {
-        const t = e.target;
-        if (!t) return;
-        if (
-          t.id === "torcherinoPreviewHost" ||
-          t.id === "torcherinoPreviewPath" ||
-          t.id === "hostMappingJson" ||
-          t.name === "defaultTarget"
-        ) {
-          update();
-        }
-      });
-
-      update();
-    })();
-  </script>
 {{end}}

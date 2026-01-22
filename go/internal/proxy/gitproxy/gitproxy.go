@@ -153,16 +153,16 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/health" {
 		payload := map[string]any{
-			"ok":            true,
-			"service":       "git",
-			"host":          runtime.Host,
-			"port":          runtime.Port,
-			"upstream":      runtime.Upstream,
+			"ok":             true,
+			"service":        "git",
+			"host":           runtime.Host,
+			"port":           runtime.Port,
+			"upstream":       runtime.Upstream,
 			"upstreamMobile": runtime.UpstreamMobile,
-			"upstreamPath":  runtime.UpstreamPath,
-			"https":         runtime.HTTPS,
-			"tokenSet":      runtime.GithubToken != "",
-			"disableCache":  runtime.DisableCache,
+			"upstreamPath":   runtime.UpstreamPath,
+			"https":          runtime.HTTPS,
+			"tokenSet":       runtime.GithubToken != "",
+			"disableCache":   runtime.DisableCache,
 			"corsOrigin": func() any {
 				if runtime.CorsOrigins.Kind == "any" {
 					return "*"

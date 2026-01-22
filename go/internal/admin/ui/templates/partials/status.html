@@ -1,10 +1,9 @@
 {{define "serviceStatusPill"}}
-  {{if eq .Status "ok"}}
-    <span class="pill ok">OK · {{.LatencyMS}}ms</span>
-  {{else if eq .Status "error"}}
-    <span class="pill err">异常</span>
+  {{if eq .Status.Status "ok"}}
+    <span class="pill ok">{{.Root.T "status.ok" .Status.LatencyMS}}</span>
+  {{else if eq .Status.Status "error"}}
+    <span class="pill err">{{.Root.T "status.error"}}</span>
   {{else}}
-    <span class="pill">未启用</span>
+    <span class="pill">{{.Root.T "status.disabled"}}</span>
   {{end}}
 {{end}}
-

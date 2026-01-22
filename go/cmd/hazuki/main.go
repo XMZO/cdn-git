@@ -17,4 +17,3 @@ func main() {
 		log.Printf("hazuki-go: fatal: %v", err)
 	}
 }
-

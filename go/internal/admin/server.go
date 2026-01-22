@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -21,12 +22,14 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"hazuki-go/internal/i18n"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/cdnjsproxy"
 	"hazuki-go/internal/storage"
 )
 
 const cookieName = "hazuki_session"
+const langCookieName = "hazuki_lang"
 
 type Options struct {
 	DB         *sql.DB
@@ -59,6 +62,9 @@ type layoutData struct {
 	HasUsers     bool
 	Notice       string
 	Error        string
+
+	Lang   string
+	JSI18n template.JS
 }
 
 type dashboardData struct {
@@ -78,6 +84,7 @@ type dashboardData struct {
 	GitURL       string
 	GitHealthURL string
 	GitStatus    serviceStatus
+	GitInstances []gitInstanceRow
 
 	CdnjsRedis redisStatus
 
@@ -89,7 +96,9 @@ type cdnjsData struct {
 	Cdnjs             model.CdnjsConfig
 	CdnjsPort         int
 	CdnjsPortValue    string
+	GhUserPolicyValue string
 	AllowedUsersCsv   string
+	BlockedUsersCsv   string
 	RedisPortValue    string
 	DefaultTTLValue   string
 	TTLOverridesValue string
@@ -106,6 +115,8 @@ type gitData struct {
 	Git               model.GitConfig
 	GitPort           int
 	GitPortValue      string
+	GitPortKey        string
+	GitEnabled        bool
 	TokenIsSet        bool
 	AuthScheme        string
 	BlockedRegionsCsv string
@@ -114,6 +125,20 @@ type gitData struct {
 	GitBaseURL        string
 	GitHealthURL      string
 	GitStatus         serviceStatus
+
+	CurrentInstanceID   string
+	CurrentInstanceName string
+	Instances           []gitInstanceRow
+}
+
+type gitInstanceRow struct {
+	ID        string
+	Name      string
+	Port      int
+	Enabled   bool
+	BaseURL   string
+	HealthURL string
+	Status    serviceStatus
 }
 
 type torcherinoData struct {
@@ -192,6 +217,8 @@ type wizardData struct {
 
 	CdnjsDefaultGhUser  string
 	CdnjsAllowedGhUsers string
+	CdnjsGhUserPolicy   string
+	CdnjsBlockedGhUsers string
 	CdnjsAssetURL       string
 	CdnjsRedisHost      string
 	CdnjsRedisPort      string
@@ -254,6 +281,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/_hazuki/health", s.wrap(s.health))
 	mux.HandleFunc("/setup", s.wrap(s.setup))
 	mux.HandleFunc("/login", s.wrap(s.login))
+	mux.HandleFunc("/lang", s.wrap(s.setLang))
 	mux.HandleFunc("/logout", s.wrapRequireAuth(s.logout))
 	mux.HandleFunc("/account", s.wrapRequireAuth(s.account))
 	mux.HandleFunc("/account/password", s.wrapRequireAuth(s.accountPassword))
@@ -332,9 +360,103 @@ func getState(ctx context.Context) *reqState {
 	return st
 }
 
-func (s *server) render(w http.ResponseWriter, data any) {
+func (s *server) render(w http.ResponseWriter, r *http.Request, data any) {
 	w.Header().Set("content-type", "text/html; charset=utf-8")
+	lang := s.pickLang(r)
+	data = injectI18nData(data, lang)
 	_ = pageTemplates.ExecuteTemplate(w, "layout", data)
+}
+
+func (s *server) pickLang(r *http.Request) string {
+	if r == nil {
+		return i18n.LangZH
+	}
+
+	if q := i18n.NormalizeLang(r.URL.Query().Get("lang")); q != "" {
+		return q
+	}
+
+	if c, err := r.Cookie(langCookieName); err == nil {
+		if v := i18n.NormalizeLang(c.Value); v != "" {
+			return v
+		}
+	}
+
+	return i18n.NegotiateLang(r.Header.Get("Accept-Language"), i18n.LangZH)
+}
+
+func (s *server) t(r *http.Request, key string, args ...any) string {
+	return adminI18n.T(s.pickLang(r), key, args...)
+}
+
+type i18nError interface {
+	I18n() (string, []any)
+}
+
+type errKey struct {
+	key  string
+	args []any
+}
+
+func (e errKey) Error() string { return e.key }
+
+func (e errKey) I18n() (string, []any) { return e.key, e.args }
+
+func errI18n(key string, args ...any) error {
+	return errKey{key: key, args: args}
+}
+
+func (s *server) errText(r *http.Request, err error) string {
+	if err == nil {
+		return ""
+	}
+	var ie i18nError
+	if errors.As(err, &ie) {
+		key, args := ie.I18n()
+		return s.t(r, key, args...)
+	}
+	return err.Error()
+}
+
+func injectI18nData(data any, lang string) any {
+	if data == nil {
+		return data
+	}
+
+	jsMap := adminI18n.Export(lang, "js.")
+	jsBytes, _ := json.Marshal(jsMap)
+
+	v := reflect.ValueOf(data)
+
+	// Fast-path: pointer to struct.
+	if v.Kind() == reflect.Ptr && !v.IsNil() && v.Elem().Kind() == reflect.Struct {
+		if f := v.Elem().FieldByName("Lang"); f.IsValid() && f.CanSet() && f.Kind() == reflect.String {
+			f.SetString(lang)
+		}
+		if f := v.Elem().FieldByName("JSI18n"); f.IsValid() && f.CanSet() {
+			if f.Type() == reflect.TypeOf(template.JS("")) {
+				f.Set(reflect.ValueOf(template.JS(string(jsBytes))))
+			}
+		}
+		return data
+	}
+
+	// Struct value: copy into a new pointer so we can set fields.
+	if v.Kind() == reflect.Struct {
+		p := reflect.New(v.Type())
+		p.Elem().Set(v)
+		if f := p.Elem().FieldByName("Lang"); f.IsValid() && f.CanSet() && f.Kind() == reflect.String {
+			f.SetString(lang)
+		}
+		if f := p.Elem().FieldByName("JSI18n"); f.IsValid() && f.CanSet() {
+			if f.Type() == reflect.TypeOf(template.JS("")) {
+				f.Set(reflect.ValueOf(template.JS(string(jsBytes))))
+			}
+		}
+		return p.Interface()
+	}
+
+	return data
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
@@ -372,10 +494,12 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	title := s.t(r, "page.setup.title")
+
 	switch r.Method {
 	case http.MethodGet:
-		s.render(w, layoutData{
-			Title:        "初始化管理员",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "setup",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -389,12 +513,12 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.render(w, layoutData{
-			Title:        "初始化管理员",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "setup",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Bad request",
+			Error:        s.t(r, "error.badRequest"),
 		})
 		return
 	}
@@ -403,8 +527,8 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	_, err := storage.CreateUser(s.db, username, password)
 	if err != nil {
-		s.render(w, layoutData{
-			Title:        "初始化管理员",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "setup",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -415,23 +539,23 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 
 	user, ok, err := storage.VerifyUserPassword(s.db, username, password)
 	if err != nil || !ok {
-		s.render(w, layoutData{
-			Title:        "初始化管理员",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "setup",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Failed to create user",
+			Error:        s.t(r, "error.failedCreateUser"),
 		})
 		return
 	}
 	token, err := storage.CreateSession(s.db, user.ID, s.sessionTTL)
 	if err != nil {
-		s.render(w, layoutData{
-			Title:        "初始化管理员",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "setup",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Failed to create session",
+			Error:        s.t(r, "error.failedCreateSession"),
 		})
 		return
 	}
@@ -455,10 +579,12 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	title := s.t(r, "page.login.title")
+
 	switch r.Method {
 	case http.MethodGet:
-		s.render(w, layoutData{
-			Title:        "登录",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "login",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -472,12 +598,12 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.render(w, layoutData{
-			Title:        "登录",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "login",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Bad request",
+			Error:        s.t(r, "error.badRequest"),
 		})
 		return
 	}
@@ -485,38 +611,79 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	user, ok, err := storage.VerifyUserPassword(s.db, username, password)
 	if err != nil {
-		s.render(w, layoutData{
-			Title:        "登录",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "login",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Bad request",
+			Error:        s.t(r, "error.badRequest"),
 		})
 		return
 	}
 	if !ok {
-		s.render(w, layoutData{
-			Title:        "登录",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "login",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "登录失败",
+			Error:        s.t(r, "error.loginFailed"),
 		})
 		return
 	}
 	token, err := storage.CreateSession(s.db, user.ID, s.sessionTTL)
 	if err != nil {
-		s.render(w, layoutData{
-			Title:        "登录",
+		s.render(w, r, layoutData{
+			Title:        title,
 			BodyTemplate: "login",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
-			Error:        "Failed to create session",
+			Error:        s.t(r, "error.failedCreateSession"),
 		})
 		return
 	}
 	setSessionCookie(w, token, s.sessionTTL, isSecureRequest(r))
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *server) setLang(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	next := ""
+	if q := strings.TrimSpace(r.URL.Query().Get("next")); q != "" {
+		if u, err := url.Parse(q); err == nil && !u.IsAbs() && strings.HasPrefix(u.Path, "/") {
+			next = u.String()
+		}
+	}
+	if next == "" {
+		if ref := strings.TrimSpace(r.Referer()); ref != "" {
+			if u, err := url.Parse(ref); err == nil && strings.EqualFold(u.Host, r.Host) && strings.HasPrefix(u.Path, "/") {
+				next = u.RequestURI()
+			}
+		}
+	}
+	if next == "" {
+		next = "/"
+	}
+
+	targetLang := i18n.NormalizeLang(r.URL.Query().Get("to"))
+	if targetLang == "" {
+		targetLang = i18n.LangZH
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     langCookieName,
+		Value:    targetLang,
+		Path:     "/",
+		MaxAge:   31536000,
+		Secure:   isSecureRequest(r),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.Redirect(w, r, next, http.StatusFound)
 }
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
@@ -534,11 +701,13 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.dashboard.title")
+
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, dashboardData{
+		s.render(w, r, dashboardData{
 			layoutData: layoutData{
-				Title:        "概览",
+				Title:        title,
 				BodyTemplate: "dashboard",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -556,21 +725,34 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 			strings.TrimSpace(cfg.Torcherino.WorkerSecretKey) != "" ||
 			len(cfg.Torcherino.WorkerSecretHeaderMap) > 0
 		if hasSecret {
-			warnings = append(warnings, "未设置 HAZUKI_MASTER_KEY：敏感配置将以明文存储在 SQLite 中。")
+			warnings = append(warnings, s.t(r, "warning.masterKeyMissing"))
 		}
 	}
 
-	if strings.TrimSpace(cfg.Cdnjs.DefaultGhUser) == "" {
-		warnings = append(warnings, "cdnjs：DEFAULT_GH_USER 为空，短路径（/xxx）将返回 400。")
+	if !cfg.Cdnjs.Disabled {
+		ghUserPolicy := strings.ToLower(strings.TrimSpace(cfg.Cdnjs.GhUserPolicy))
+		if ghUserPolicy == "" {
+			ghUserPolicy = "allowlist"
+		}
+
+		if strings.TrimSpace(cfg.Cdnjs.DefaultGhUser) == "" {
+			warnings = append(warnings, s.t(r, "warning.cdnjs.defaultUserMissing"))
+		}
+		if ghUserPolicy == "denylist" {
+			if len(cfg.Cdnjs.BlockedGhUsers) == 0 {
+				warnings = append(warnings, s.t(r, "warning.cdnjs.denylistOpen"))
+			}
+		} else {
+			if len(cfg.Cdnjs.AllowedGhUsers) == 0 {
+				warnings = append(warnings, s.t(r, "warning.cdnjs.allowlistEmpty"))
+			}
+		}
+		if redisSt.Status == "error" {
+			warnings = append(warnings, s.t(r, "warning.cdnjs.redisError"))
+		}
 	}
-	if len(cfg.Cdnjs.AllowedGhUsers) == 0 {
-		warnings = append(warnings, "cdnjs：ALLOWED_GH_USERS 为空，/gh/* 将全部拒绝。")
-	}
-	if redisSt.Status == "error" {
-		warnings = append(warnings, "cdnjs：Redis 连接失败，缓存将不可用（或请求会更慢）。")
-	}
-	if strings.TrimSpace(cfg.Torcherino.DefaultTarget) == "" && len(cfg.Torcherino.HostMapping) == 0 {
-		warnings = append(warnings, "torcherino：DEFAULT_TARGET 为空且 HOST_MAPPING 为空，服务将返回 502。")
+	if !cfg.Torcherino.Disabled && strings.TrimSpace(cfg.Torcherino.DefaultTarget) == "" && len(cfg.Torcherino.HostMapping) == 0 {
+		warnings = append(warnings, s.t(r, "warning.torcherino.badConfig"))
 	}
 
 	scheme := requestScheme(r)
@@ -583,9 +765,44 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	cdnjsURL := baseURLForPort(r, cfg.Ports.Cdnjs)
 	gitURL := baseURLForPort(r, cfg.Ports.Git)
 
-	s.render(w, dashboardData{
+	gitInstances := []gitInstanceRow{}
+	if len(cfg.GitInstances) > 0 {
+		sorted := append([]model.GitInstanceConfig(nil), cfg.GitInstances...)
+		sort.Slice(sorted, func(i, j int) bool {
+			return strings.ToLower(strings.TrimSpace(sorted[i].ID)) < strings.ToLower(strings.TrimSpace(sorted[j].ID))
+		})
+		for _, it := range sorted {
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				continue
+			}
+			name := strings.TrimSpace(it.Name)
+			if name == "" {
+				name = id
+			}
+			baseURL := baseURLForPort(r, it.Port)
+			enabled := !it.Git.Disabled
+			st := func() serviceStatus {
+				if !enabled {
+					return disabledServiceStatus(it.Port)
+				}
+				return checkServiceStatus(r.Context(), it.Port)
+			}()
+			gitInstances = append(gitInstances, gitInstanceRow{
+				ID:        id,
+				Name:      name,
+				Port:      it.Port,
+				Enabled:   enabled,
+				BaseURL:   baseURL,
+				HealthURL: baseURL + "/_hazuki/health",
+				Status:    st,
+			})
+		}
+	}
+
+	s.render(w, r, dashboardData{
 		layoutData: layoutData{
-			Title:        "概览",
+			Title:        title,
 			BodyTemplate: "dashboard",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -596,15 +813,31 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 		TorcherinoURL:       torcherinoURL,
 		TorcherinoHealthURL: torcherinoURL + "/_hazuki/health",
-		TorcherinoStatus:    checkServiceStatus(r.Context(), cfg.Ports.Torcherino),
+		TorcherinoStatus: func() serviceStatus {
+			if cfg.Torcherino.Disabled {
+				return disabledServiceStatus(cfg.Ports.Torcherino)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Torcherino)
+		}(),
 
 		CdnjsURL:       cdnjsURL,
 		CdnjsHealthURL: cdnjsURL + "/_hazuki/health",
-		CdnjsStatus:    checkServiceStatus(r.Context(), cfg.Ports.Cdnjs),
+		CdnjsStatus: func() serviceStatus {
+			if cfg.Cdnjs.Disabled {
+				return disabledServiceStatus(cfg.Ports.Cdnjs)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Cdnjs)
+		}(),
 
 		GitURL:       gitURL,
 		GitHealthURL: gitURL + "/_hazuki/health",
-		GitStatus:    checkServiceStatus(r.Context(), cfg.Ports.Git),
+		GitStatus: func() serviceStatus {
+			if cfg.Git.Disabled {
+				return disabledServiceStatus(cfg.Ports.Git)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Git)
+		}(),
+		GitInstances: gitInstances,
 
 		CdnjsRedis: redisSt,
 		Warnings:   warnings,
@@ -613,11 +846,13 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) system(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.system.title")
+
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, systemData{
+		s.render(w, r, systemData{
 			layoutData: layoutData{
-				Title:        "系统",
+				Title:        title,
 				BodyTemplate: "system",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -649,9 +884,9 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 
-	s.render(w, systemData{
+	s.render(w, r, systemData{
 		layoutData: layoutData{
-			Title:        "系统",
+			Title:        title,
 			BodyTemplate: "system",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -675,10 +910,25 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 
 		Ports: cfg.Ports,
 
-		AdminStatus:      checkServiceStatus(r.Context(), s.port),
-		TorcherinoStatus: checkServiceStatus(r.Context(), cfg.Ports.Torcherino),
-		CdnjsStatus:      checkServiceStatus(r.Context(), cfg.Ports.Cdnjs),
-		GitStatus:        checkServiceStatus(r.Context(), cfg.Ports.Git),
+		AdminStatus: checkServiceStatus(r.Context(), s.port),
+		TorcherinoStatus: func() serviceStatus {
+			if cfg.Torcherino.Disabled {
+				return disabledServiceStatus(cfg.Ports.Torcherino)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Torcherino)
+		}(),
+		CdnjsStatus: func() serviceStatus {
+			if cfg.Cdnjs.Disabled {
+				return disabledServiceStatus(cfg.Ports.Cdnjs)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Cdnjs)
+		}(),
+		GitStatus: func() serviceStatus {
+			if cfg.Git.Disabled {
+				return disabledServiceStatus(cfg.Ports.Git)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Git)
+		}(),
 
 		Redis: checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port),
 	})
@@ -686,12 +936,13 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.git.title")
 
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, gitData{
+		s.render(w, r, gitData{
 			layoutData: layoutData{
-				Title:        "GitHub Raw",
+				Title:        title,
 				BodyTemplate: "git",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -701,13 +952,39 @@ func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	instanceID := strings.TrimSpace(r.URL.Query().Get("instance"))
+
 	switch r.Method {
 	case http.MethodGet:
 		notice := ""
-		if r.URL.Query().Get("ok") != "" {
-			notice = "已保存"
+		if r.URL.Query().Get("added") != "" {
+			if instanceID != "" && !strings.EqualFold(instanceID, "default") {
+				port := 0
+				for _, it := range cfg.GitInstances {
+					if strings.EqualFold(strings.TrimSpace(it.ID), instanceID) {
+						port = it.Port
+						break
+					}
+				}
+				if port > 0 {
+					notice = adminI18n.T(
+						s.pickLang(r),
+						"git.instanceCreated",
+						instanceID,
+						port,
+						port,
+						port,
+					)
+				} else {
+					notice = adminI18n.T(s.pickLang(r), "git.instanceCreatedShort")
+				}
+			} else {
+				notice = adminI18n.T(s.pickLang(r), "git.instanceCreatedShort")
+			}
+		} else if r.URL.Query().Get("ok") != "" {
+			notice = adminI18n.T(s.pickLang(r), "common.saved")
 		}
-		s.renderGitForm(w, r, st, cfg, notice, "", strconv.Itoa(cfg.Ports.Git), "")
+		s.renderGitForm(w, r, st, cfg, instanceID, notice, "", "", "")
 		return
 	case http.MethodPost:
 		// continue
@@ -717,9 +994,115 @@ func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderGitForm(w, r, st, cfg, "", "Bad request", strconv.Itoa(cfg.Ports.Git), "")
+		s.renderGitForm(w, r, st, cfg, instanceID, "", s.t(r, "error.badRequest"), "", "")
 		return
 	}
+
+	action := strings.TrimSpace(r.FormValue("action"))
+	if action == "addInstance" {
+		newID := strings.TrimSpace(r.FormValue("newInstanceID"))
+		newName := strings.TrimSpace(r.FormValue("newInstanceName"))
+		newPortRaw := strings.TrimSpace(r.FormValue("newInstancePort"))
+		if newID == "" {
+			s.renderGitForm(w, r, st, cfg, "", "", s.t(r, "error.git.instanceIdRequired"), "", "")
+			return
+		}
+		if strings.EqualFold(newID, "default") {
+			s.renderGitForm(w, r, st, cfg, "", "", s.t(r, "error.git.instanceIdReserved"), "", "")
+			return
+		}
+		if newPortRaw == "" {
+			s.renderGitForm(w, r, st, cfg, "", "", s.t(r, "error.portRequired"), "", "")
+			return
+		}
+		newPort, err := parsePort(newPortRaw, 0)
+		if err != nil {
+			s.renderGitForm(w, r, st, cfg, "", "", s.errText(r, err), "", "")
+			return
+		}
+
+		enabled := parseBool(r.FormValue("newInstanceEnabled"), true)
+
+		userID := st.User.ID
+		err = s.config.Update(storage.UpdateRequest{
+			UserID: &userID,
+			Note:   "add:gitInstance",
+			Updater: func(cur model.AppConfig) (model.AppConfig, error) {
+				next := cur
+				for _, it := range next.GitInstances {
+					if strings.EqualFold(strings.TrimSpace(it.ID), newID) {
+						return model.AppConfig{}, errI18n("error.git.instanceExists", newID)
+					}
+				}
+
+				gi := model.GitInstanceConfig{
+					ID:   newID,
+					Name: newName,
+					Port: newPort,
+					Git:  next.Git, // copy from default
+				}
+				gi.Git.Disabled = !enabled
+				next.GitInstances = append(next.GitInstances, gi)
+				return next, nil
+			},
+		})
+		if err != nil {
+			s.renderGitForm(w, r, st, cfg, "", "", s.errText(r, err), "", "")
+			return
+		}
+		http.Redirect(w, r, "/config/git?ok=1&added=1&instance="+url.QueryEscape(newID), http.StatusFound)
+		return
+	}
+	if action == "deleteInstance" {
+		delID := strings.TrimSpace(r.FormValue("instanceID"))
+		if delID == "" {
+			s.renderGitForm(w, r, st, cfg, "", "", s.t(r, "error.git.instanceIdRequired"), "", "")
+			return
+		}
+
+		userID := st.User.ID
+		err = s.config.Update(storage.UpdateRequest{
+			UserID: &userID,
+			Note:   "delete:gitInstance",
+			Updater: func(cur model.AppConfig) (model.AppConfig, error) {
+				next := cur
+				out := make([]model.GitInstanceConfig, 0, len(next.GitInstances))
+				found := false
+				for _, it := range next.GitInstances {
+					if strings.EqualFold(strings.TrimSpace(it.ID), delID) {
+						found = true
+						continue
+					}
+					out = append(out, it)
+				}
+				if !found {
+					return model.AppConfig{}, errI18n("error.git.instanceNotFound", delID)
+				}
+				next.GitInstances = out
+				return next, nil
+			},
+		})
+		if err != nil {
+			s.renderGitForm(w, r, st, cfg, "", "", s.errText(r, err), "", "")
+			return
+		}
+		http.Redirect(w, r, "/config/git?ok=1", http.StatusFound)
+		return
+	}
+
+	// Default or instance config update.
+	instanceID = strings.TrimSpace(r.FormValue("instanceID"))
+	isInstance := instanceID != ""
+	serviceEnabledFallback := !cfg.Git.Disabled
+	if isInstance {
+		for _, it := range cfg.GitInstances {
+			if strings.EqualFold(strings.TrimSpace(it.ID), instanceID) {
+				serviceEnabledFallback = !it.Git.Disabled
+				break
+			}
+		}
+	}
+	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), serviceEnabledFallback)
 
 	githubAuthScheme := strings.TrimSpace(r.FormValue("githubAuthScheme"))
 	if githubAuthScheme == "" {
@@ -756,56 +1139,116 @@ func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 	blockedIPs := parseCSV(r.FormValue("blockedIpAddresses"))
 
 	draft := cfg
-	draft.Git.Upstream = upstream
-	draft.Git.UpstreamMobile = upstreamMobile
-	draft.Git.UpstreamPath = upstreamPath
-	draft.Git.HTTPS = httpsEnabled
-	draft.Git.GithubAuthScheme = githubAuthScheme
-	draft.Git.DisableCache = disableCache
-	draft.Git.CacheControl = cacheControl
-	draft.Git.CacheControlMedia = cacheControlMedia
-	draft.Git.CacheControlText = cacheControlText
-	draft.Git.CorsOrigin = corsOrigin
-	draft.Git.CorsAllowCredentials = corsAllowCredentials
-	draft.Git.CorsExposeHeaders = corsExposeHeaders
-	draft.Git.BlockedRegions = blockedRegions
-	draft.Git.BlockedIpAddresses = blockedIPs
+	applyDraftGit := func(g *model.GitConfig) {
+		g.Disabled = !serviceEnabled
+		g.Upstream = upstream
+		g.UpstreamMobile = upstreamMobile
+		g.UpstreamPath = upstreamPath
+		g.HTTPS = httpsEnabled
+		g.GithubAuthScheme = githubAuthScheme
+		g.DisableCache = disableCache
+		g.CacheControl = cacheControl
+		g.CacheControlMedia = cacheControlMedia
+		g.CacheControlText = cacheControlText
+		g.CorsOrigin = corsOrigin
+		g.CorsAllowCredentials = corsAllowCredentials
+		g.CorsExposeHeaders = corsExposeHeaders
+		g.BlockedRegions = blockedRegions
+		g.BlockedIpAddresses = blockedIPs
+	}
+
+	if isInstance {
+		found := false
+		for i := range draft.GitInstances {
+			if strings.EqualFold(strings.TrimSpace(draft.GitInstances[i].ID), instanceID) {
+				found = true
+				applyDraftGit(&draft.GitInstances[i].Git)
+				break
+			}
+		}
+		if !found {
+			s.renderGitForm(w, r, st, cfg, "", "", s.t(r, "error.git.instanceNotFound", instanceID), "", r.FormValue("replaceDictJson"))
+			return
+		}
+	} else {
+		applyDraftGit(&draft.Git)
+	}
 	if clearGithubToken {
-		draft.Git.GithubToken = ""
+		if isInstance {
+			for i := range draft.GitInstances {
+				if strings.EqualFold(strings.TrimSpace(draft.GitInstances[i].ID), instanceID) {
+					draft.GitInstances[i].Git.GithubToken = ""
+					break
+				}
+			}
+		} else {
+			draft.Git.GithubToken = ""
+		}
 	}
 
 	gitPortRaw := strings.TrimSpace(r.FormValue("gitPort"))
-	gitPort, err := parsePort(gitPortRaw, cfg.Ports.Git)
+	fallbackPort := cfg.Ports.Git
+	if isInstance {
+		for _, it := range cfg.GitInstances {
+			if strings.EqualFold(strings.TrimSpace(it.ID), instanceID) {
+				fallbackPort = it.Port
+				break
+			}
+		}
+	}
+	gitPort, err := parsePort(gitPortRaw, fallbackPort)
 	if err != nil {
-		s.renderGitForm(w, r, st, draft, "", err.Error(), gitPortRaw, r.FormValue("replaceDictJson"))
+		s.renderGitForm(w, r, st, draft, instanceID, "", s.errText(r, err), gitPortRaw, r.FormValue("replaceDictJson"))
 		return
 	}
-	draft.Ports.Git = gitPort
+	if isInstance {
+		for i := range draft.GitInstances {
+			if strings.EqualFold(strings.TrimSpace(draft.GitInstances[i].ID), instanceID) {
+				draft.GitInstances[i].Port = gitPort
+				break
+			}
+		}
+	} else {
+		draft.Ports.Git = gitPort
+	}
 
 	if githubAuthScheme != "token" && githubAuthScheme != "Bearer" {
-		s.renderGitForm(w, r, st, draft, "", "GITHUB_AUTH_SCHEME 必须是 token 或 Bearer", gitPortRaw, r.FormValue("replaceDictJson"))
+		s.renderGitForm(w, r, st, draft, instanceID, "", s.t(r, "error.git.authSchemeInvalid"), gitPortRaw, r.FormValue("replaceDictJson"))
 		return
 	}
 
 	if corsAllowCredentials && corsOrigin == "*" {
-		s.renderGitForm(w, r, st, draft, "", "CORS_ALLOW_CREDENTIALS=true 与 CORS_ORIGIN='*' 不兼容", gitPortRaw, r.FormValue("replaceDictJson"))
+		s.renderGitForm(w, r, st, draft, instanceID, "", s.t(r, "error.git.corsCredentialsStar"), gitPortRaw, r.FormValue("replaceDictJson"))
 		return
 	}
 
 	replaceDictRaw := r.FormValue("replaceDictJson")
 	replaceDict, err := parseStringMapJSON(replaceDictRaw)
 	if err != nil {
-		s.renderGitForm(w, r, st, draft, "", fmt.Sprintf("REPLACE_DICT: %v", err), gitPortRaw, replaceDictRaw)
+		s.renderGitForm(w, r, st, draft, instanceID, "", fmt.Sprintf("REPLACE_DICT: %v", err), gitPortRaw, replaceDictRaw)
 		return
 	}
-	draft.Git.ReplaceDict = replaceDict
+	if isInstance {
+		for i := range draft.GitInstances {
+			if strings.EqualFold(strings.TrimSpace(draft.GitInstances[i].ID), instanceID) {
+				draft.GitInstances[i].Git.ReplaceDict = replaceDict
+				break
+			}
+		}
+	} else {
+		draft.Git.ReplaceDict = replaceDict
+	}
 
 	note := strings.TrimSpace(r.FormValue("note"))
 	userID := st.User.ID
 
 	clearSecrets := []string{}
 	if clearGithubToken {
-		clearSecrets = append(clearSecrets, "git.githubToken")
+		if isInstance {
+			clearSecrets = append(clearSecrets, "gitInstances."+instanceID+".git.githubToken")
+		} else {
+			clearSecrets = append(clearSecrets, "git.githubToken")
+		}
 	}
 
 	err = s.config.Update(storage.UpdateRequest{
@@ -815,52 +1258,72 @@ func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 		ClearSecrets:         clearSecrets,
 		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
 			next := cur
-			next.Ports.Git = gitPort
-			next.Git.Upstream = upstream
-			next.Git.UpstreamMobile = upstreamMobile
-			next.Git.UpstreamPath = upstreamPath
-			next.Git.HTTPS = httpsEnabled
+			applyGit := func(g *model.GitConfig) {
+				g.Disabled = !serviceEnabled
+				g.Upstream = upstream
+				g.UpstreamMobile = upstreamMobile
+				g.UpstreamPath = upstreamPath
+				g.HTTPS = httpsEnabled
+				g.GithubAuthScheme = githubAuthScheme
+				g.DisableCache = disableCache
+				g.CacheControl = cacheControl
+				g.CacheControlMedia = cacheControlMedia
+				g.CacheControlText = cacheControlText
+				g.CorsOrigin = corsOrigin
+				g.CorsAllowCredentials = corsAllowCredentials
+				g.CorsExposeHeaders = corsExposeHeaders
+				g.BlockedRegions = blockedRegions
+				g.BlockedIpAddresses = blockedIPs
+				g.ReplaceDict = replaceDict
+				if clearGithubToken {
+					g.GithubToken = ""
+				} else {
+					g.GithubToken = githubToken
+				}
+			}
 
-			next.Git.GithubAuthScheme = githubAuthScheme
-
-			next.Git.DisableCache = disableCache
-			next.Git.CacheControl = cacheControl
-			next.Git.CacheControlMedia = cacheControlMedia
-			next.Git.CacheControlText = cacheControlText
-
-			next.Git.CorsOrigin = corsOrigin
-			next.Git.CorsAllowCredentials = corsAllowCredentials
-			next.Git.CorsExposeHeaders = corsExposeHeaders
-
-			next.Git.BlockedRegions = blockedRegions
-			next.Git.BlockedIpAddresses = blockedIPs
-			next.Git.ReplaceDict = replaceDict
-
-			if clearGithubToken {
-				next.Git.GithubToken = ""
+			if isInstance {
+				found := false
+				for i := range next.GitInstances {
+					if strings.EqualFold(strings.TrimSpace(next.GitInstances[i].ID), instanceID) {
+						found = true
+						next.GitInstances[i].Port = gitPort
+						applyGit(&next.GitInstances[i].Git)
+						break
+					}
+				}
+				if !found {
+					return model.AppConfig{}, errI18n("error.git.instanceNotFound", instanceID)
+				}
 			} else {
-				next.Git.GithubToken = githubToken
+				next.Ports.Git = gitPort
+				applyGit(&next.Git)
 			}
 			return next, nil
 		},
 	})
 	if err != nil {
-		s.renderGitForm(w, r, st, draft, "", err.Error(), gitPortRaw, replaceDictRaw)
+		s.renderGitForm(w, r, st, draft, instanceID, "", s.errText(r, err), gitPortRaw, replaceDictRaw)
 		return
 	}
 
-	http.Redirect(w, r, "/config/git?ok=1", http.StatusFound)
+	if isInstance {
+		http.Redirect(w, r, "/config/git?ok=1&instance="+url.QueryEscape(instanceID), http.StatusFound)
+	} else {
+		http.Redirect(w, r, "/config/git?ok=1", http.StatusFound)
+	}
 }
 
 func (s *server) account(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.account.title")
 	notice := ""
 	if r.URL.Query().Get("ok") != "" {
-		notice = "已保存"
+		notice = s.t(r, "common.saved")
 	}
-	s.render(w, accountData{
+	s.render(w, r, accountData{
 		layoutData: layoutData{
-			Title:        "账号",
+			Title:        title,
 			BodyTemplate: "account",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -871,18 +1334,19 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) accountPassword(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.account.title")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.render(w, accountData{
+		s.render(w, r, accountData{
 			layoutData: layoutData{
-				Title:        "账号",
+				Title:        title,
 				BodyTemplate: "account",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        "Bad request",
+				Error:        s.t(r, "error.badRequest"),
 			},
 		})
 		return
@@ -890,9 +1354,9 @@ func (s *server) accountPassword(w http.ResponseWriter, r *http.Request) {
 
 	newPassword := r.FormValue("newPassword")
 	if err := storage.UpdateUserPassword(s.db, st.User.ID, newPassword); err != nil {
-		s.render(w, accountData{
+		s.render(w, r, accountData{
 			layoutData: layoutData{
-				Title:        "账号",
+				Title:        title,
 				BodyTemplate: "account",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -906,12 +1370,13 @@ func (s *server) accountPassword(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.cdnjs.title")
 
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, cdnjsData{
+		s.render(w, r, cdnjsData{
 			layoutData: layoutData{
-				Title:        "jsDelivr 缓存",
+				Title:        title,
 				BodyTemplate: "cdnjs",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -925,7 +1390,7 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		notice := ""
 		if r.URL.Query().Get("ok") != "" {
-			notice = "已保存"
+			notice = s.t(r, "common.saved")
 		}
 		s.renderCdnjsForm(
 			w,
@@ -935,7 +1400,9 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 			notice,
 			"",
 			strconv.Itoa(cfg.Ports.Cdnjs),
+			strings.TrimSpace(cfg.Cdnjs.GhUserPolicy),
 			strings.Join(cfg.Cdnjs.AllowedGhUsers, ","),
+			strings.Join(cfg.Cdnjs.BlockedGhUsers, ","),
 			strconv.Itoa(cfg.Cdnjs.Redis.Port),
 			"",
 			"",
@@ -955,9 +1422,11 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 			st,
 			cfg,
 			"",
-			"Bad request",
+			s.t(r, "error.badRequest"),
 			strconv.Itoa(cfg.Ports.Cdnjs),
+			strings.TrimSpace(cfg.Cdnjs.GhUserPolicy),
 			strings.Join(cfg.Cdnjs.AllowedGhUsers, ","),
+			strings.Join(cfg.Cdnjs.BlockedGhUsers, ","),
 			strconv.Itoa(cfg.Cdnjs.Redis.Port),
 			"",
 			"",
@@ -966,6 +1435,8 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := cfg
+	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), !cfg.Cdnjs.Disabled)
+	draft.Cdnjs.Disabled = !serviceEnabled
 
 	assetURL := strings.TrimSpace(r.FormValue("assetUrl"))
 	if assetURL == "" {
@@ -977,9 +1448,38 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	defaultUser := strings.TrimSpace(r.FormValue("defaultGhUser"))
 	draft.Cdnjs.DefaultGhUser = defaultUser
 
+	ghUserPolicyRaw := strings.TrimSpace(r.FormValue("ghUserPolicy"))
+	ghUserPolicy := strings.ToLower(strings.TrimSpace(ghUserPolicyRaw))
+	if ghUserPolicy == "" {
+		ghUserPolicy = "allowlist"
+	}
+	if ghUserPolicy != "allowlist" && ghUserPolicy != "denylist" {
+		s.renderCdnjsForm(
+			w,
+			r,
+			st,
+			draft,
+			"",
+			s.t(r, "error.cdnjs.ghUserPolicyInvalid"),
+			strings.TrimSpace(r.FormValue("cdnjsPort")),
+			ghUserPolicyRaw,
+			strings.TrimSpace(r.FormValue("allowedGhUsers")),
+			strings.TrimSpace(r.FormValue("blockedGhUsers")),
+			strings.TrimSpace(r.FormValue("redisPort")),
+			strings.TrimSpace(r.FormValue("defaultTTLSeconds")),
+			r.FormValue("ttlOverrides"),
+		)
+		return
+	}
+	draft.Cdnjs.GhUserPolicy = ghUserPolicy
+
 	allowedUsersRaw := strings.TrimSpace(r.FormValue("allowedGhUsers"))
 	allowedUsers := parseCSV(allowedUsersRaw)
 	draft.Cdnjs.AllowedGhUsers = allowedUsers
+
+	blockedUsersRaw := strings.TrimSpace(r.FormValue("blockedGhUsers"))
+	blockedUsers := parseCSV(blockedUsersRaw)
+	draft.Cdnjs.BlockedGhUsers = blockedUsers
 
 	redisHost := strings.TrimSpace(r.FormValue("redisHost"))
 	if redisHost == "" {
@@ -993,35 +1493,35 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	cdnjsPortRaw := strings.TrimSpace(r.FormValue("cdnjsPort"))
 	cdnjsPort, err := parsePort(cdnjsPortRaw, cfg.Ports.Cdnjs)
 	if err != nil {
-		s.renderCdnjsForm(w, r, st, draft, "", err.Error(), cdnjsPortRaw, allowedUsersRaw, r.FormValue("redisPort"), defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.errText(r, err), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, r.FormValue("redisPort"), defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 	draft.Ports.Cdnjs = cdnjsPort
 
 	u, err := url.Parse(assetURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || strings.TrimSpace(u.Host) == "" {
-		s.renderCdnjsForm(w, r, st, draft, "", "ASSET_URL 必须是有效的 http(s) URL", cdnjsPortRaw, allowedUsersRaw, r.FormValue("redisPort"), defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.t(r, "error.cdnjs.assetUrlInvalid"), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, r.FormValue("redisPort"), defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 
 	redisPortRaw := strings.TrimSpace(r.FormValue("redisPort"))
 	redisPort, err := parsePort(redisPortRaw, cfg.Cdnjs.Redis.Port)
 	if err != nil {
-		s.renderCdnjsForm(w, r, st, draft, "", err.Error(), cdnjsPortRaw, allowedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.errText(r, err), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 	draft.Cdnjs.Redis.Port = redisPort
 
 	defaultTTLSeconds, err := parseTTLSeconds(defaultTTLRaw)
 	if err != nil {
-		s.renderCdnjsForm(w, r, st, draft, "", err.Error(), cdnjsPortRaw, allowedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.errText(r, err), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 	draft.Cdnjs.DefaultTTLSeconds = defaultTTLSeconds
 
 	cacheTTLSeconds, err := parseTTLOverrides(ttlOverridesRaw)
 	if err != nil {
-		s.renderCdnjsForm(w, r, st, draft, "", err.Error(), cdnjsPortRaw, allowedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.errText(r, err), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 	draft.Cdnjs.CacheTTLSeconds = cacheTTLSeconds
@@ -1035,9 +1535,12 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
 			next := cur
 			next.Ports.Cdnjs = cdnjsPort
+			next.Cdnjs.Disabled = !serviceEnabled
 			next.Cdnjs.AssetURL = assetURL
 			next.Cdnjs.DefaultGhUser = defaultUser
+			next.Cdnjs.GhUserPolicy = ghUserPolicy
 			next.Cdnjs.AllowedGhUsers = allowedUsers
+			next.Cdnjs.BlockedGhUsers = blockedUsers
 			next.Cdnjs.Redis.Host = redisHost
 			next.Cdnjs.Redis.Port = redisPort
 			next.Cdnjs.DefaultTTLSeconds = defaultTTLSeconds
@@ -1046,7 +1549,7 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		s.renderCdnjsForm(w, r, st, draft, "", err.Error(), cdnjsPortRaw, allowedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
+		s.renderCdnjsForm(w, r, st, draft, "", s.errText(r, err), cdnjsPortRaw, ghUserPolicyRaw, allowedUsersRaw, blockedUsersRaw, redisPortRaw, defaultTTLRaw, ttlOverridesRaw)
 		return
 	}
 
@@ -1055,11 +1558,12 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.torcherino.title")
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, torcherinoData{
+		s.render(w, r, torcherinoData{
 			layoutData: layoutData{
-				Title:        "Torcherino",
+				Title:        title,
 				BodyTemplate: "torcherino",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1073,7 +1577,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		notice := ""
 		if r.URL.Query().Get("ok") != "" {
-			notice = "已保存"
+			notice = s.t(r, "common.saved")
 		}
 		s.renderTorcherinoForm(w, r, st, cfg, notice, "", strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "")
 		return
@@ -1085,15 +1589,18 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderTorcherinoForm(w, r, st, cfg, "", "Bad request", strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "")
+		s.renderTorcherinoForm(w, r, st, cfg, "", s.t(r, "error.badRequest"), strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "")
 		return
 	}
+
+	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), !cfg.Torcherino.Disabled)
 
 	defaultTarget := strings.TrimSpace(r.FormValue("defaultTarget"))
 	hostMappingRaw := r.FormValue("hostMappingJson")
 	hostMapping, err := parseHostMappingJSON(hostMappingRaw)
 	if err != nil {
 		draft := cfg
+		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		s.renderTorcherinoForm(w, r, st, draft, "", "HOST_MAPPING: "+err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"))
@@ -1106,9 +1613,10 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	workerSecretHeaders, err := parseHeaderNamesCSVStrict(r.FormValue("workerSecretHeaders"))
 	if err != nil {
 		draft := cfg
+		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"))
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"))
 		return
 	}
 
@@ -1117,9 +1625,10 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	mergedHeaderMap, err := mergeSecretHeaderMap(secretHeaderMapRaw, cfg.Torcherino.WorkerSecretHeaderMap, clearWorkerSecretHeaderMap)
 	if err != nil {
 		draft := cfg
+		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
 		return
 	}
 
@@ -1127,9 +1636,10 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	port, err := parsePort(portRaw, cfg.Ports.Torcherino)
 	if err != nil {
 		draft := cfg
+		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", err.Error(), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
 		return
 	}
 
@@ -1150,6 +1660,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
 			next := cur
 			next.Ports.Torcherino = port
+			next.Torcherino.Disabled = !serviceEnabled
 			next.Torcherino.DefaultTarget = defaultTarget
 			next.Torcherino.HostMapping = hostMapping
 			next.Torcherino.WorkerSecretHeaders = workerSecretHeaders
@@ -1165,11 +1676,12 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Ports.Torcherino = port
+		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		draft.Torcherino.WorkerSecretHeaders = workerSecretHeaders
 		draft.Torcherino.WorkerSecretHeaderMap = mergedHeaderMap
-		s.renderTorcherinoForm(w, r, st, draft, "", err.Error(), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
 		return
 	}
 
@@ -1178,6 +1690,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.versions.title")
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1185,9 +1698,9 @@ func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 
 	versions, err := s.config.ListVersions(100)
 	if err != nil {
-		s.render(w, versionsData{
+		s.render(w, r, versionsData{
 			layoutData: layoutData{
-				Title:        "版本 & 备份",
+				Title:        title,
 				BodyTemplate: "versions",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1199,11 +1712,11 @@ func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 
 	notice := ""
 	if r.URL.Query().Get("ok") != "" {
-		notice = "已操作"
+		notice = s.t(r, "common.applied")
 	}
-	s.render(w, versionsData{
+	s.render(w, r, versionsData{
 		layoutData: layoutData{
-			Title:        "版本 & 备份",
+			Title:        title,
 			BodyTemplate: "versions",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -1215,6 +1728,7 @@ func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configVersionsSub(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.versions.title")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1237,9 +1751,9 @@ func (s *server) configVersionsSub(w http.ResponseWriter, r *http.Request) {
 	userID := st.User.ID
 	if err := s.config.RestoreVersion(versionID, &userID); err != nil {
 		versions, _ := s.config.ListVersions(100)
-		s.render(w, versionsData{
+		s.render(w, r, versionsData{
 			layoutData: layoutData{
-				Title:        "版本 & 备份",
+				Title:        title,
 				BodyTemplate: "versions",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1264,8 +1778,14 @@ func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ts := time.Now().UTC().Format("20060102-150405Z")
+	filename := fmt.Sprintf("hazuki-config-%s.json", ts)
+
 	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.Header().Set("content-disposition", "attachment; filename=\"hazuki-config.json\"")
+	w.Header().Set(
+		"content-disposition",
+		fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", filename, url.PathEscape(filename)),
+	)
 	enc, _ := json.MarshalIndent(encrypted, "", "  ")
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
@@ -1276,11 +1796,12 @@ func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.import.title")
 	switch r.Method {
 	case http.MethodGet:
-		s.render(w, importData{
+		s.render(w, r, importData{
 			layoutData: layoutData{
-				Title:        "导入备份",
+				Title:        title,
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1295,13 +1816,13 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.render(w, importData{
+		s.render(w, r, importData{
 			layoutData: layoutData{
-				Title:        "导入备份",
+				Title:        title,
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        "Bad request",
+				Error:        s.t(r, "error.badRequest"),
 			},
 		})
 		return
@@ -1310,26 +1831,26 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 	raw := r.FormValue("configJson")
 	var parsed model.AppConfig
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		s.render(w, importData{
+		s.render(w, r, importData{
 			layoutData: layoutData{
-				Title:        "导入备份",
+				Title:        title,
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        "JSON 格式错误: " + err.Error(),
+				Error:        fmt.Sprintf("%s: %s", s.t(r, "error.jsonInvalid"), err.Error()),
 			},
 			ConfigJSON: raw,
 		})
 		return
 	}
 	if err := parsed.Validate(); err != nil {
-		s.render(w, importData{
+		s.render(w, r, importData{
 			layoutData: layoutData{
-				Title:        "导入备份",
+				Title:        title,
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        "配置不合法: " + err.Error(),
+				Error:        fmt.Sprintf("%s: %s", s.t(r, "error.configInvalid"), err.Error()),
 			},
 			ConfigJSON: raw,
 		})
@@ -1344,13 +1865,13 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 			return parsed, nil
 		},
 	}); err != nil {
-		s.render(w, importData{
+		s.render(w, r, importData{
 			layoutData: layoutData{
-				Title:        "导入备份",
+				Title:        title,
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        err.Error(),
+				Error:        s.errText(r, err),
 			},
 			ConfigJSON: raw,
 		})
@@ -1362,11 +1883,12 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
+	title := s.t(r, "page.wizard.title")
 	current, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		s.render(w, wizardData{
+		s.render(w, r, wizardData{
 			layoutData: layoutData{
-				Title:        "快速向导",
+				Title:        title,
 				BodyTemplate: "wizard",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1381,15 +1903,15 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		notice := ""
 		if r.URL.Query().Get("ok") != "" {
-			notice = "已保存"
+			notice = s.t(r, "common.saved")
 		}
 
 		hostMappingJSON, _ := json.MarshalIndent(current.Torcherino.HostMapping, "", "  ")
 		headerMapJSON, _ := json.MarshalIndent(redacted.Torcherino.WorkerSecretHeaderMap, "", "  ")
 
-		s.render(w, wizardData{
+		s.render(w, r, wizardData{
 			layoutData: layoutData{
-				Title:        "快速向导",
+				Title:        title,
 				BodyTemplate: "wizard",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
@@ -1406,6 +1928,8 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 
 			CdnjsDefaultGhUser:  current.Cdnjs.DefaultGhUser,
 			CdnjsAllowedGhUsers: strings.Join(current.Cdnjs.AllowedGhUsers, ", "),
+			CdnjsGhUserPolicy:   strings.TrimSpace(current.Cdnjs.GhUserPolicy),
+			CdnjsBlockedGhUsers: strings.Join(current.Cdnjs.BlockedGhUsers, ", "),
 			CdnjsAssetURL:       current.Cdnjs.AssetURL,
 			CdnjsRedisHost:      current.Cdnjs.Redis.Host,
 			CdnjsRedisPort:      strconv.Itoa(current.Cdnjs.Redis.Port),
@@ -1421,13 +1945,13 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.render(w, wizardData{
+		s.render(w, r, wizardData{
 			layoutData: layoutData{
-				Title:        "快速向导",
+				Title:        title,
 				BodyTemplate: "wizard",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        "Bad request",
+				Error:        s.t(r, "error.badRequest"),
 			},
 		})
 		return
@@ -1435,7 +1959,7 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 
 	form := wizardData{
 		layoutData: layoutData{
-			Title:        "快速向导",
+			Title:        title,
 			BodyTemplate: "wizard",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -1451,6 +1975,8 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 
 		CdnjsDefaultGhUser:  strings.TrimSpace(r.FormValue("cdnjsDefaultGhUser")),
 		CdnjsAllowedGhUsers: strings.TrimSpace(r.FormValue("cdnjsAllowedGhUsers")),
+		CdnjsGhUserPolicy:   strings.TrimSpace(r.FormValue("cdnjsGhUserPolicy")),
+		CdnjsBlockedGhUsers: strings.TrimSpace(r.FormValue("cdnjsBlockedGhUsers")),
 		CdnjsAssetURL:       strings.TrimSpace(r.FormValue("cdnjsAssetUrl")),
 		CdnjsRedisHost:      strings.TrimSpace(r.FormValue("cdnjsRedisHost")),
 		CdnjsRedisPort:      strings.TrimSpace(r.FormValue("cdnjsRedisPort")),
@@ -1466,21 +1992,21 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	hostMapping, err := parseHostMappingJSON(form.TorcherinoHostMappingJSON)
 	if err != nil {
 		form.Error = "HOST_MAPPING: " + err.Error()
-		s.render(w, form)
+		s.render(w, r, form)
 		return
 	}
 
 	workerSecretHeaders, err := parseHeaderNamesCSVStrict(form.TorcherinoWorkerSecretHeaders)
 	if err != nil {
-		form.Error = err.Error()
-		s.render(w, form)
+		form.Error = s.errText(r, err)
+		s.render(w, r, form)
 		return
 	}
 
 	mergedHeaderMap, err := mergeSecretHeaderMap(form.TorcherinoWorkerSecretHeaderMap, current.Torcherino.WorkerSecretHeaderMap, clearWorkerSecretHeaderMap)
 	if err != nil {
-		form.Error = err.Error()
-		s.render(w, form)
+		form.Error = s.errText(r, err)
+		s.render(w, r, form)
 		return
 	}
 
@@ -1488,15 +2014,25 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	hasDefault := strings.TrimSpace(defaultTarget) != ""
 	hasMapping := len(hostMapping) > 0
 	if !hasDefault && !hasMapping {
-		form.Error = "torcherino：请至少填写 DEFAULT_TARGET 或 HOST_MAPPING"
-		s.render(w, form)
+		form.Error = s.t(r, "error.torcherino.needDefaultOrMap")
+		s.render(w, r, form)
 		return
 	}
 
 	cdnjsAllowed := parseCSV(form.CdnjsAllowedGhUsers)
-	if strings.TrimSpace(form.CdnjsDefaultGhUser) == "" && len(cdnjsAllowed) == 0 {
-		form.Error = "jsDelivr 缓存：请至少填写 DEFAULT_GH_USER 或 ALLOWED_GH_USERS"
-		s.render(w, form)
+	cdnjsBlocked := parseCSV(form.CdnjsBlockedGhUsers)
+	ghUserPolicy := strings.ToLower(strings.TrimSpace(form.CdnjsGhUserPolicy))
+	if ghUserPolicy == "" {
+		ghUserPolicy = "allowlist"
+	}
+	if ghUserPolicy != "allowlist" && ghUserPolicy != "denylist" {
+		form.Error = s.t(r, "error.cdnjs.ghUserPolicyInvalid")
+		s.render(w, r, form)
+		return
+	}
+	if ghUserPolicy == "allowlist" && strings.TrimSpace(form.CdnjsDefaultGhUser) == "" && len(cdnjsAllowed) == 0 {
+		form.Error = s.t(r, "error.cdnjs.allowlistNeedDefaultOrAllowed")
+		s.render(w, r, form)
 		return
 	}
 
@@ -1506,8 +2042,8 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 	}
 	assetURL = strings.TrimRight(assetURL, "/")
 	if u, err := url.Parse(assetURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || strings.TrimSpace(u.Host) == "" {
-		form.Error = "ASSET_URL 必须是有效的 http(s) URL"
-		s.render(w, form)
+		form.Error = s.t(r, "error.cdnjs.assetUrlInvalid")
+		s.render(w, r, form)
 		return
 	}
 
@@ -1518,16 +2054,16 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 
 	redisPort, err := parsePort(form.CdnjsRedisPort, current.Cdnjs.Redis.Port)
 	if err != nil {
-		form.Error = err.Error()
-		s.render(w, form)
+		form.Error = s.errText(r, err)
+		s.render(w, r, form)
 		return
 	}
 
 	upstreamPath := normalizePath(form.GitUpstreamPath)
 	parts := strings.Split(strings.Trim(upstreamPath, "/"), "/")
 	if len(parts) < 3 {
-		form.Error = "UPSTREAM_PATH 至少需要 3 段：/owner/repo/branch"
-		s.render(w, form)
+		form.Error = s.t(r, "error.git.upstreamPathTooShort")
+		s.render(w, r, form)
 		return
 	}
 
@@ -1562,7 +2098,9 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 			next.Torcherino.WorkerSecretHeaderMap = mergedHeaderMap
 
 			next.Cdnjs.DefaultGhUser = form.CdnjsDefaultGhUser
+			next.Cdnjs.GhUserPolicy = ghUserPolicy
 			next.Cdnjs.AllowedGhUsers = cdnjsAllowed
+			next.Cdnjs.BlockedGhUsers = cdnjsBlocked
 			next.Cdnjs.AssetURL = assetURL
 			next.Cdnjs.Redis.Host = redisHost
 			next.Cdnjs.Redis.Port = redisPort
@@ -1578,64 +2116,197 @@ func (s *server) wizard(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		form.Error = err.Error()
-		s.render(w, form)
+		form.Error = s.errText(r, err)
+		s.render(w, r, form)
 		return
 	}
 
 	http.Redirect(w, r, "/wizard?ok=1", http.StatusFound)
 }
 
-func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, gitPortValue, replaceDictRaw string) {
+func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, instanceID, notice, errMsg, gitPortValue, replaceDictRaw string) {
+	instanceID = strings.TrimSpace(instanceID)
+	isDefault := instanceID == "" || strings.EqualFold(instanceID, "default")
+
+	defaultName := s.t(r, "common.default")
+
+	currentID := ""
+	currentName := defaultName
+	currentPort := cfg.Ports.Git
+	currentPortKey := "ports.git"
+	currentCfg := cfg.Git
+	currentEnabled := !cfg.Git.Disabled
+
+	if !isDefault {
+		found := false
+		for _, it := range cfg.GitInstances {
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				continue
+			}
+			if !strings.EqualFold(id, instanceID) {
+				continue
+			}
+
+			currentID = id
+			currentName = strings.TrimSpace(it.Name)
+			if currentName == "" {
+				currentName = id
+			}
+			currentPort = it.Port
+			currentPortKey = "gitInstances." + id + ".port"
+			currentCfg = it.Git
+			currentEnabled = !it.Git.Disabled
+			found = true
+			break
+		}
+
+		if !found {
+			if strings.TrimSpace(errMsg) == "" {
+				errMsg = s.t(r, "error.git.instanceNotFound", instanceID)
+			}
+			isDefault = true
+			instanceID = ""
+		}
+	}
+
+	if isDefault {
+		currentID = ""
+		currentName = defaultName
+		currentPort = cfg.Ports.Git
+		currentPortKey = "ports.git"
+		currentCfg = cfg.Git
+		currentEnabled = !cfg.Git.Disabled
+	}
+
 	replaceDictJSON := ""
 	if strings.TrimSpace(replaceDictRaw) != "" {
 		replaceDictJSON = replaceDictRaw
 	} else {
-		pretty, _ := json.MarshalIndent(cfg.Git.ReplaceDict, "", "  ")
+		pretty, _ := json.MarshalIndent(currentCfg.ReplaceDict, "", "  ")
 		replaceDictJSON = string(pretty)
 	}
 
-	authScheme := cfg.Git.GithubAuthScheme
+	authScheme := currentCfg.GithubAuthScheme
 	if strings.TrimSpace(authScheme) == "" {
 		authScheme = "token"
 	}
 
-	gitBaseURL := baseURLForPort(r, cfg.Ports.Git)
-	gitSt := checkServiceStatus(r.Context(), cfg.Ports.Git)
+	gitBaseURL := baseURLForPort(r, currentPort)
+	gitSt := func() serviceStatus {
+		if !currentEnabled {
+			return disabledServiceStatus(currentPort)
+		}
+		return checkServiceStatus(r.Context(), currentPort)
+	}()
 
 	if strings.TrimSpace(gitPortValue) == "" {
-		gitPortValue = strconv.Itoa(cfg.Ports.Git)
+		gitPortValue = strconv.Itoa(currentPort)
 	}
 
-	s.render(w, gitData{
+	instances := make([]gitInstanceRow, 0, 1+len(cfg.GitInstances))
+	instances = append(instances, func() gitInstanceRow {
+		port := cfg.Ports.Git
+		baseURL := baseURLForPort(r, port)
+		enabled := !cfg.Git.Disabled
+		st := func() serviceStatus {
+			if !enabled {
+				return disabledServiceStatus(port)
+			}
+			return checkServiceStatus(r.Context(), port)
+		}()
+		return gitInstanceRow{
+			ID:        "default",
+			Name:      defaultName,
+			Port:      port,
+			Enabled:   enabled,
+			BaseURL:   baseURL,
+			HealthURL: baseURL + "/_hazuki/health",
+			Status:    st,
+		}
+	}())
+
+	if len(cfg.GitInstances) > 0 {
+		sorted := append([]model.GitInstanceConfig(nil), cfg.GitInstances...)
+		sort.Slice(sorted, func(i, j int) bool {
+			return strings.ToLower(strings.TrimSpace(sorted[i].ID)) < strings.ToLower(strings.TrimSpace(sorted[j].ID))
+		})
+
+		for _, it := range sorted {
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				continue
+			}
+			baseURL := baseURLForPort(r, it.Port)
+			enabled := !it.Git.Disabled
+			st := func() serviceStatus {
+				if !enabled {
+					return disabledServiceStatus(it.Port)
+				}
+				return checkServiceStatus(r.Context(), it.Port)
+			}()
+
+			name := strings.TrimSpace(it.Name)
+			if name == "" {
+				name = id
+			}
+			instances = append(instances, gitInstanceRow{
+				ID:        id,
+				Name:      name,
+				Port:      it.Port,
+				Enabled:   enabled,
+				BaseURL:   baseURL,
+				HealthURL: baseURL + "/_hazuki/health",
+				Status:    st,
+			})
+		}
+	}
+
+	s.render(w, r, gitData{
 		layoutData: layoutData{
-			Title:        "GitHub Raw",
+			Title:        s.t(r, "page.git.title"),
 			BodyTemplate: "git",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
 			Notice:       notice,
 			Error:        errMsg,
 		},
-		Git:               cfg.Git,
-		GitPort:           cfg.Ports.Git,
+		Git:               currentCfg,
+		GitPort:           currentPort,
 		GitPortValue:      gitPortValue,
-		TokenIsSet:        cfg.Git.GithubToken != "",
+		GitPortKey:        currentPortKey,
+		GitEnabled:        currentEnabled,
+		TokenIsSet:        strings.TrimSpace(currentCfg.GithubToken) != "",
 		AuthScheme:        authScheme,
-		BlockedRegionsCsv: strings.Join(cfg.Git.BlockedRegions, ","),
-		BlockedIPsCsv:     strings.Join(cfg.Git.BlockedIpAddresses, ","),
+		BlockedRegionsCsv: strings.Join(currentCfg.BlockedRegions, ","),
+		BlockedIPsCsv:     strings.Join(currentCfg.BlockedIpAddresses, ","),
 		ReplaceDictJson:   replaceDictJSON,
 		GitBaseURL:        gitBaseURL,
 		GitHealthURL:      gitBaseURL + "/_hazuki/health",
 		GitStatus:         gitSt,
+
+		CurrentInstanceID:   currentID,
+		CurrentInstanceName: currentName,
+		Instances:           instances,
 	})
 }
 
-func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, cdnjsPortValue, allowedUsersCsv, redisPortValue, defaultTTLValue, ttlOverridesValue string) {
+func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, cdnjsPortValue, ghUserPolicyValue, allowedUsersCsv, blockedUsersCsv, redisPortValue, defaultTTLValue, ttlOverridesValue string) {
 	if strings.TrimSpace(cdnjsPortValue) == "" {
 		cdnjsPortValue = strconv.Itoa(cfg.Ports.Cdnjs)
 	}
+	if strings.TrimSpace(ghUserPolicyValue) == "" {
+		ghUserPolicyValue = strings.TrimSpace(cfg.Cdnjs.GhUserPolicy)
+	}
+	ghUserPolicyValue = strings.ToLower(strings.TrimSpace(ghUserPolicyValue))
+	if ghUserPolicyValue == "" {
+		ghUserPolicyValue = "allowlist"
+	}
 	if strings.TrimSpace(allowedUsersCsv) == "" {
 		allowedUsersCsv = strings.Join(cfg.Cdnjs.AllowedGhUsers, ",")
+	}
+	if strings.TrimSpace(blockedUsersCsv) == "" {
+		blockedUsersCsv = strings.Join(cfg.Cdnjs.BlockedGhUsers, ",")
 	}
 	if strings.TrimSpace(redisPortValue) == "" {
 		redisPortValue = strconv.Itoa(cfg.Cdnjs.Redis.Port)
@@ -1661,11 +2332,16 @@ func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *req
 
 	cdnjsBaseURL := baseURLForPort(r, cfg.Ports.Cdnjs)
 	redisSt := checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
-	cdnjsSt := checkServiceStatus(r.Context(), cfg.Ports.Cdnjs)
+	cdnjsSt := func() serviceStatus {
+		if cfg.Cdnjs.Disabled {
+			return disabledServiceStatus(cfg.Ports.Cdnjs)
+		}
+		return checkServiceStatus(r.Context(), cfg.Ports.Cdnjs)
+	}()
 
-	s.render(w, cdnjsData{
+	s.render(w, r, cdnjsData{
 		layoutData: layoutData{
-			Title:        "jsDelivr 缓存",
+			Title:        s.t(r, "page.cdnjs.title"),
 			BodyTemplate: "cdnjs",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -1675,7 +2351,9 @@ func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *req
 		Cdnjs:             cfg.Cdnjs,
 		CdnjsPort:         cfg.Ports.Cdnjs,
 		CdnjsPortValue:    cdnjsPortValue,
+		GhUserPolicyValue: ghUserPolicyValue,
 		AllowedUsersCsv:   allowedUsersCsv,
+		BlockedUsersCsv:   blockedUsersCsv,
 		RedisPortValue:    redisPortValue,
 		DefaultTTLValue:   defaultTTLValue,
 		TTLOverridesValue: ttlOverridesValue,
@@ -1715,11 +2393,16 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 	}
 
 	baseURL := baseURLForPort(r, cfg.Ports.Torcherino)
-	torcherinoSt := checkServiceStatus(r.Context(), cfg.Ports.Torcherino)
+	torcherinoSt := func() serviceStatus {
+		if cfg.Torcherino.Disabled {
+			return disabledServiceStatus(cfg.Ports.Torcherino)
+		}
+		return checkServiceStatus(r.Context(), cfg.Ports.Torcherino)
+	}()
 
-	s.render(w, torcherinoData{
+	s.render(w, r, torcherinoData{
 		layoutData: layoutData{
-			Title:        "Torcherino",
+			Title:        s.t(r, "page.torcherino.title"),
 			BodyTemplate: "torcherino",
 			User:         st.User,
 			HasUsers:     st.HasUsers,
@@ -1865,6 +2548,15 @@ func checkRedisStatus(ctx context.Context, host string, port int) redisStatus {
 	}
 
 	return st
+}
+
+func disabledServiceStatus(port int) serviceStatus {
+	if port <= 0 || port > 65535 {
+		return serviceStatus{Status: "disabled"}
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	u := "http://" + addr + "/_hazuki/health"
+	return serviceStatus{Addr: addr, URL: u, Status: "disabled"}
 }
 
 func checkServiceStatus(ctx context.Context, port int) serviceStatus {
@@ -2114,7 +2806,7 @@ func parsePort(value string, fallback int) (int, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 || n > 65535 {
-		return 0, errors.New("端口必须是 1-65535 的整数")
+		return 0, errI18n("error.portRange")
 	}
 	return n, nil
 }
@@ -2128,7 +2820,7 @@ func parseTTLSeconds(value string) (int, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 || n > maxTTLSeconds {
-		return 0, fmt.Errorf("TTL 必须是 1-%d 的整数（单位：秒）；留空表示使用内置默认", maxTTLSeconds)
+		return 0, errI18n("error.ttlRange", maxTTLSeconds)
 	}
 	return n, nil
 }
@@ -2143,7 +2835,7 @@ func parseTTLOverrides(raw string) (map[string]int, error) {
 	if strings.HasPrefix(trimmed, "{") {
 		var m map[string]int
 		if err := json.Unmarshal([]byte(trimmed), &m); err != nil {
-			return nil, fmt.Errorf("TTL overrides JSON 格式错误: %w", err)
+			return nil, errI18n("error.ttlOverridesJsonInvalid", err.Error())
 		}
 		out := make(map[string]int, len(m))
 		for k, v := range m {
@@ -2152,7 +2844,7 @@ func parseTTLOverrides(raw string) (map[string]int, error) {
 				continue
 			}
 			if v < 1 || v > maxTTLSeconds {
-				return nil, fmt.Errorf("TTL overrides[%q] 必须是 1-%d 的整数（秒）", ext, maxTTLSeconds)
+				return nil, errI18n("error.ttlOverridesEntryRange", ext, maxTTLSeconds)
 			}
 			out[ext] = v
 		}
@@ -2178,21 +2870,21 @@ func parseTTLOverrides(raw string) (map[string]int, error) {
 
 		sep := strings.IndexAny(s, "=:")
 		if sep == -1 {
-			return nil, fmt.Errorf("TTL overrides 第 %d 行错误：请使用 ext=seconds 格式", i+1)
+			return nil, errI18n("error.ttlOverridesLineFormat", i+1)
 		}
 
 		ext := normalizeExtKey(strings.TrimSpace(s[:sep]))
 		if ext == "" {
-			return nil, fmt.Errorf("TTL overrides 第 %d 行错误：后缀为空", i+1)
+			return nil, errI18n("error.ttlOverridesLineEmptyExt", i+1)
 		}
 		if ext == "default" {
-			return nil, fmt.Errorf("TTL overrides 第 %d 行错误：请用上方 Default TTL，不要写 default=...", i+1)
+			return nil, errI18n("error.ttlOverridesLineDefaultNotAllowed", i+1)
 		}
 
 		ttlRaw := strings.TrimSpace(s[sep+1:])
 		n, err := strconv.Atoi(ttlRaw)
 		if err != nil || n < 1 || n > maxTTLSeconds {
-			return nil, fmt.Errorf("TTL overrides 第 %d 行错误：TTL 必须是 1-%d 的整数（秒）", i+1, maxTTLSeconds)
+			return nil, errI18n("error.ttlOverridesLineRange", i+1, maxTTLSeconds)
 		}
 		out[ext] = n
 	}
@@ -2298,7 +2990,7 @@ func parseHeaderNamesCSVStrict(value string) ([]string, error) {
 			continue
 		}
 		if !isValidHeaderName(name) {
-			return nil, errors.New("WORKER_SECRET_HEADERS：Header 名称不合法")
+			return nil, errI18n("error.workerSecretHeadersInvalid")
 		}
 		if _, ok := seen[name]; ok {
 			continue
@@ -2325,11 +3017,11 @@ func mergeSecretHeaderMap(raw string, current map[string]string, clear bool) (ma
 
 	var v any
 	if err := json.Unmarshal([]byte(trimmed), &v); err != nil {
-		return nil, fmt.Errorf("WORKER_SECRET_HEADER_MAP：JSON 格式错误: %w", err)
+		return nil, errI18n("error.workerSecretHeaderMapJsonInvalid", err.Error())
 	}
 	obj, ok := v.(map[string]any)
 	if !ok {
-		return nil, errors.New("WORKER_SECRET_HEADER_MAP：JSON must be an object")
+		return nil, errI18n("error.workerSecretHeaderMapNotObject")
 	}
 
 	out := map[string]string{}
@@ -2339,7 +3031,7 @@ func mergeSecretHeaderMap(raw string, current map[string]string, clear bool) (ma
 			continue
 		}
 		if !isValidHeaderName(headerName) {
-			return nil, errors.New("WORKER_SECRET_HEADER_MAP：Header 名称不合法")
+			return nil, errI18n("error.workerSecretHeaderMapInvalidHeader")
 		}
 
 		switch vv := rawValue.(type) {
@@ -2358,7 +3050,7 @@ func mergeSecretHeaderMap(raw string, current map[string]string, clear bool) (ma
 		case nil:
 			continue
 		default:
-			return nil, errors.New("WORKER_SECRET_HEADER_MAP：value 必须是字符串")
+			return nil, errI18n("error.workerSecretHeaderMapValueMustBeString")
 		}
 	}
 	return out, nil

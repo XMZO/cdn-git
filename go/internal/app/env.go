@@ -13,4 +13,3 @@ type runtimeEnv struct {
 	initialCfg model.AppConfig
 	sessionTTL int
 }
-

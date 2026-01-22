@@ -61,4 +61,3 @@ CREATE TABLE IF NOT EXISTS config_versions (
 	_, err = db.Exec("PRAGMA user_version = 1;")
 	return err
 }
-

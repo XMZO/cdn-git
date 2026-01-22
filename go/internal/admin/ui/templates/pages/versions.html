@@ -1,28 +1,28 @@
 {{define "versions"}}
   <div class="grid">
     <div class="card">
-      <h2>版本 & 备份</h2>
-      <div class="muted small">每次保存配置都会写入一条版本记录（SQLite）。可导出/导入 JSON 备份。</div>
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "versions.subtitle"}}</div>
       <div class="btn-row">
-        <a class="btn" href="/config/export">下载备份（export）</a>
-        <a class="btn" href="/config/import">导入备份（import）</a>
+        <a class="btn" href="/config/export" data-confirm-download="{{.T "backup.confirmTitle"}}" data-confirm-detail="{{.T "backup.confirmDetail"}}">{{.T "nav.export"}}</a>
+        <a class="btn" href="/config/import">{{.T "nav.import"}}</a>
       </div>
     </div>
 
     <div class="card">
-      <h3>历史版本</h3>
+      <h3>{{.T "versions.history"}}</h3>
       {{if not .Versions}}
-        <div class="muted small">暂无版本</div>
+        <div class="muted small">{{.T "versions.none"}}</div>
       {{else}}
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
                 <th>ID</th>
-                <th>时间</th>
-                <th>用户</th>
-                <th>备注</th>
-                <th>操作</th>
+                <th>{{.T "versions.time"}}</th>
+                <th>{{.T "versions.user"}}</th>
+                <th>{{.T "common.note"}}</th>
+                <th>{{.T "common.actions"}}</th>
               </tr>
             </thead>
             <tbody>
@@ -34,7 +34,7 @@
                   <td>{{.Note}}</td>
                   <td>
                     <form method="post" action="/config/versions/{{.ID}}/restore" style="margin:0;">
-                      <button class="btn" type="submit" onclick="return confirm('确定回滚到该版本？这会立即生效。');">回滚</button>
+                      <button class="btn" type="submit" onclick="return confirm({{printf "%q" ($.T "versions.confirmRestore")}});">{{$.T "versions.restore"}}</button>
                     </form>
                   </td>
                 </tr>

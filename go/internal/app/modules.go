@@ -55,4 +55,3 @@ func listenAndServe(name string, server *http.Server, required bool, fatalErrCh 
 
 	return true, nil
 }
-

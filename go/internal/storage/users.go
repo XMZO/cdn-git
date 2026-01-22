@@ -109,4 +109,3 @@ func badRequest(msg string) error {
 func nowIso() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
-

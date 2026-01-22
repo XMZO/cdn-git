@@ -1,24 +1,23 @@
 {{define "login"}}
   <div class="auth">
     <div class="card">
-      <h2>登录</h2>
-      <div class="muted small">Hazuki 管理面板（本地管理员）。</div>
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "layout.meta"}}</div>
 
       <form method="post" action="/login" class="form" style="margin-top:14px;">
         <div class="field">
-          <label>用户名</label>
+          <label>{{.T "auth.username"}}</label>
           <input type="text" name="username" autocomplete="username" required />
         </div>
         <div class="field">
-          <label>密码</label>
+          <label>{{.T "auth.password"}}</label>
           <input type="password" name="password" autocomplete="current-password" required />
         </div>
         <div class="btn-row">
-          <button class="btn primary" type="submit">登录</button>
-          {{if not .HasUsers}}<a class="btn" href="/setup">创建管理员</a>{{end}}
+          <button class="btn primary" type="submit">{{.T "page.login.title"}}</button>
+          {{if not .HasUsers}}<a class="btn" href="/setup">{{.T "login.createAdmin"}}</a>{{end}}
         </div>
       </form>
     </div>
   </div>
 {{end}}
-

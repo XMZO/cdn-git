@@ -33,4 +33,3 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 	}
 	return db, nil
 }
-

@@ -150,4 +150,3 @@ func ensureKdfSalt(db *sql.DB) (string, error) {
 	}
 	return salt, nil
 }
-
