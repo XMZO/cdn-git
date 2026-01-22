@@ -21,6 +21,7 @@ func (adminModule) Start(_ context.Context, env *runtimeEnv, fatalErrCh chan<- e
 		Port:       env.initialCfg.Ports.Admin,
 		SessionTTL: env.sessionTTL,
 		Metrics:    env.metrics,
+		Traffic:    env.traffic,
 	})
 	if err != nil {
 		return nil, err

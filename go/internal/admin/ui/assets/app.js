@@ -82,6 +82,10 @@
   let dashAbort = null;
   let dashSeq = 0;
 
+  let trafficTimer = null;
+  let trafficAbort = null;
+  let trafficSeq = 0;
+
   const stopDashboardStats = () => {
     if (dashTimer) {
       clearInterval(dashTimer);
@@ -280,6 +284,263 @@
     dashPrevAt = 0;
     pollDashboardStats();
     dashTimer = setInterval(pollDashboardStats, 2000);
+  };
+
+  const stopTrafficPage = () => {
+    if (trafficTimer) {
+      clearInterval(trafficTimer);
+      trafficTimer = null;
+    }
+    if (trafficAbort && typeof trafficAbort.abort === "function") {
+      try {
+        trafficAbort.abort();
+      } catch {
+        // ignore
+      }
+    }
+    trafficAbort = null;
+  };
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  const formatBucketTime = (kind, ts) => {
+    const d = new Date(Number(ts) * 1000);
+    if (!Number.isFinite(d.getTime())) return "-";
+    const y = d.getUTCFullYear();
+    const m = pad2(d.getUTCMonth() + 1);
+    const day = pad2(d.getUTCDate());
+    const h = pad2(d.getUTCHours());
+    if (kind === "year") return String(y);
+    if (kind === "month") return `${y}-${m}`;
+    if (kind === "day") return `${y}-${m}-${day}`;
+    return `${y}-${m}-${day} ${h}:00`;
+  };
+
+  const setTrafficKindActive = (kind) => {
+    const root = qs("[data-hz-traffic-kind]");
+    if (!root) return;
+    for (const btn of qsa("[data-hz-kind]", root)) {
+      const k = (btn.getAttribute("data-hz-kind") || "").trim();
+      btn.classList.toggle("active", k === kind);
+    }
+  };
+
+  const getTrafficKind = () => {
+    const root = qs("[data-hz-traffic-kind]");
+    if (!root) return "hour";
+    const active = qs("[data-hz-kind].active", root);
+    const k = active ? (active.getAttribute("data-hz-kind") || "").trim() : "";
+    return k || "hour";
+  };
+
+  const getTrafficService = () => {
+    const sel = qs("#hzTrafficSvc");
+    if (!(sel instanceof HTMLSelectElement)) return "total";
+    return (sel.value || "").trim() || "total";
+  };
+
+  const buildLinePath = ({ values, width, height, pad, max }) => {
+    const n = values.length;
+    if (n === 0) return "";
+    const innerW = Math.max(1, width - pad * 2);
+    const innerH = Math.max(1, height - pad * 2);
+    const denom = Math.max(1, max);
+    const step = n === 1 ? 0 : innerW / (n - 1);
+
+    let d = "";
+    for (let i = 0; i < n; i += 1) {
+      const x = pad + step * i;
+      const v = Math.max(0, Number(values[i]) || 0);
+      const y = pad + (1 - Math.min(1, v / denom)) * innerH;
+      d += (i === 0 ? "M" : "L") + x.toFixed(2) + " " + y.toFixed(2) + " ";
+    }
+    return d.trim();
+  };
+
+  const buildGridPath = ({ width, height, pad }) => {
+    const innerW = Math.max(1, width - pad * 2);
+    const innerH = Math.max(1, height - pad * 2);
+
+    let d = "";
+    for (let i = 1; i <= 3; i += 1) {
+      const y = pad + (innerH * i) / 4;
+      d += "M" + pad + " " + y.toFixed(2) + " L" + (pad + innerW) + " " + y.toFixed(2) + " ";
+    }
+    for (let i = 1; i <= 3; i += 1) {
+      const x = pad + (innerW * i) / 4;
+      d += "M" + x.toFixed(2) + " " + pad + " L" + x.toFixed(2) + " " + (pad + innerH) + " ";
+    }
+    return d.trim();
+  };
+
+  const renderTrafficSeries = (payload) => {
+    const kind = (payload && payload.kind ? payload.kind : "").toString();
+    const pts = Array.isArray(payload && payload.points) ? payload.points : [];
+
+    const outEl = qs("#hzTrafficOut");
+    const inEl = qs("#hzTrafficIn");
+    const gridEl = qs("#hzTrafficGrid");
+    const outLastEl = qs("#hzTrafficOutLast");
+    const inLastEl = qs("#hzTrafficInLast");
+    const rangeEl = qs("#hzTrafficRange");
+    const tbody = qs("#hzTrafficTableBody");
+
+    if (!(outEl instanceof SVGPathElement) || !(inEl instanceof SVGPathElement) || !(gridEl instanceof SVGPathElement)) {
+      return;
+    }
+
+    const bytesOut = pts.map((p) => toInt(p && p.bytesOut));
+    const bytesIn = pts.map((p) => toInt(p && p.bytesIn));
+    const reqs = pts.map((p) => toInt(p && p.requests));
+
+    const max = Math.max(1, ...bytesOut, ...bytesIn);
+
+    const width = 1000;
+    const height = 260;
+    const pad = 18;
+
+    gridEl.setAttribute("d", buildGridPath({ width, height, pad }));
+    outEl.setAttribute("d", buildLinePath({ values: bytesOut, width, height, pad, max }));
+    inEl.setAttribute("d", buildLinePath({ values: bytesIn, width, height, pad, max }));
+
+    const last = pts.length ? pts[pts.length - 1] : null;
+    if (outLastEl) outLastEl.textContent = formatBytes(toInt(last && last.bytesOut));
+    if (inLastEl) inLastEl.textContent = formatBytes(toInt(last && last.bytesIn));
+
+    if (rangeEl) {
+      const fromTs = payload && payload.fromTs ? payload.fromTs : 0;
+      const toTs = payload && payload.toTs ? payload.toTs : 0;
+      rangeEl.textContent =
+        formatBucketTime(kind, fromTs) +
+        " → " +
+        formatBucketTime(kind, toTs) +
+        " · " +
+        tKey("dashboard.traffic.total", "Total") +
+        ": " +
+        formatBytes(max);
+    }
+
+    if (tbody) {
+      tbody.innerHTML = "";
+      for (let i = pts.length - 1; i >= 0; i -= 1) {
+        const p = pts[i] || {};
+        const tr = document.createElement("tr");
+
+        const tdTime = document.createElement("td");
+        tdTime.textContent = formatBucketTime(kind, p.startTs);
+        tr.appendChild(tdTime);
+
+        const tdOut = document.createElement("td");
+        tdOut.innerHTML = "<code>" + formatBytes(toInt(p.bytesOut)) + "</code>";
+        tr.appendChild(tdOut);
+
+        const tdIn = document.createElement("td");
+        tdIn.innerHTML = "<code>" + formatBytes(toInt(p.bytesIn)) + "</code>";
+        tr.appendChild(tdIn);
+
+        const tdReq = document.createElement("td");
+        tdReq.innerHTML = "<code>" + String(toInt(p.requests)) + "</code>";
+        tr.appendChild(tdReq);
+
+        tbody.appendChild(tr);
+      }
+
+      if (!pts.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 4;
+        td.className = "muted small";
+        td.textContent = "-";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+    }
+  };
+
+  const fetchTrafficSeries = async () => {
+    const page = (document.body && document.body.getAttribute("data-page")) || "";
+    if (page !== "traffic") return;
+
+    const kind = getTrafficKind();
+    const svc = getTrafficService();
+
+    const mySeq = (trafficSeq += 1);
+
+    if (trafficAbort && typeof trafficAbort.abort === "function") {
+      try {
+        trafficAbort.abort();
+      } catch {
+        // ignore
+      }
+    }
+    trafficAbort = typeof AbortController === "function" ? new AbortController() : null;
+
+    const url = new URL("/_hazuki/traffic/series", window.location.href);
+    url.searchParams.set("kind", kind);
+    url.searchParams.set("svc", svc);
+
+    try {
+      const resp = await fetch(url.toString(), {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: trafficAbort ? trafficAbort.signal : undefined,
+      });
+      if (mySeq !== trafficSeq) return;
+      const ct = (resp.headers.get("content-type") || "").toLowerCase();
+      if (!resp.ok || !ct.includes("application/json")) return;
+
+      const payload = await resp.json();
+      if (mySeq !== trafficSeq) return;
+
+      renderTrafficSeries(payload);
+    } catch {
+      if (trafficAbort && trafficAbort.signal && trafficAbort.signal.aborted) {
+        return;
+      }
+    }
+  };
+
+  const ensureTrafficPage = () => {
+    const page = (document.body && document.body.getAttribute("data-page")) || "";
+    if (page !== "traffic") {
+      stopTrafficPage();
+      return;
+    }
+
+    const kindRoot = qs("[data-hz-traffic-kind]");
+    if (kindRoot) {
+      for (const btn of qsa("[data-hz-kind]", kindRoot)) {
+        if (btn.__hzTrafficBound) continue;
+        btn.__hzTrafficBound = true;
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          const k = (btn.getAttribute("data-hz-kind") || "").trim();
+          if (!k) return;
+          setTrafficKindActive(k);
+          fetchTrafficSeries();
+        });
+      }
+    }
+
+    const svcSel = qs("#hzTrafficSvc");
+    if (svcSel instanceof HTMLSelectElement && !svcSel.__hzTrafficBound) {
+      svcSel.__hzTrafficBound = true;
+      svcSel.addEventListener("change", () => fetchTrafficSeries());
+    }
+
+    const refreshBtn = qs("#hzTrafficRefresh");
+    if (refreshBtn instanceof HTMLElement && !refreshBtn.__hzTrafficBound) {
+      refreshBtn.__hzTrafficBound = true;
+      refreshBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        fetchTrafficSeries();
+      });
+    }
+
+    if (!trafficTimer) {
+      fetchTrafficSeries();
+      trafficTimer = setInterval(fetchTrafficSeries, 10000);
+    }
   };
 
   const formatJson = (ta, msgEl) => {
@@ -759,6 +1020,7 @@
     updateCdnjsPreview();
     updateTorcherinoPreview();
     ensureDashboardStats();
+    ensureTrafficPage();
   };
 
   const updateNavActive = (pathname) => {
@@ -1081,9 +1343,9 @@
       okBtn.textContent = (okText || tKey("modal.ok", "确认")).toString();
 
       for (const el of cancelEls) {
-        if (el instanceof HTMLElement && el.hasAttribute("data-hz-modal-cancel")) {
-          el.textContent = tKey("modal.cancel", "取消");
-        }
+        // Avoid putting visible text into non-button cancel elements (e.g. the backdrop).
+        if (el instanceof HTMLButtonElement) el.textContent = tKey("modal.cancel", "取消");
+        else el.textContent = "";
       }
 
       root.hidden = false;
@@ -1102,6 +1364,30 @@
         } catch {
           // ignore
         }
+      }
+    });
+  };
+
+  const onConfirmSubmitClick = (e) => {
+    const btn = e.target instanceof Element ? e.target.closest("[data-confirm-submit]") : null;
+    if (!btn) return;
+
+    const form = btn.closest("form");
+    if (!(form instanceof HTMLFormElement)) return;
+
+    const title = (btn.getAttribute("data-confirm-submit") || "").trim();
+    if (!title) return;
+
+    const detail = (btn.getAttribute("data-confirm-detail") || "").trim();
+    const okText = (btn.getAttribute("data-confirm-ok") || "").trim();
+
+    e.preventDefault();
+    confirmModal({ title, detail, okText }).then((ok) => {
+      if (!ok) return;
+      try {
+        form.submit();
+      } catch {
+        // ignore
       }
     });
   };
@@ -1176,6 +1462,7 @@
 
   document.addEventListener("click", onFormatJsonClick);
   document.addEventListener("change", onTogglePassword);
+  document.addEventListener("click", onConfirmSubmitClick);
   document.addEventListener("click", onLinkClick);
   document.addEventListener("input", onPreviewInput);
   document.addEventListener("change", onPreviewInput);

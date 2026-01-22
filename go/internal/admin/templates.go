@@ -18,6 +18,7 @@ var bodyTemplateAllowList = map[string]struct{}{
 	"setup":      {},
 	"dashboard":  {},
 	"system":     {},
+	"traffic":    {},
 	"wizard":     {},
 	"torcherino": {},
 	"cdnjs":      {},

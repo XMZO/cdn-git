@@ -152,6 +152,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	requestOrigin := r.Header.Get("Origin")
 
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/health" {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			http.NotFound(w, r)
+			return
+		}
+
 		payload := map[string]any{
 			"ok":             true,
 			"service":        "git",
@@ -772,6 +777,14 @@ func isLoopback(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return isLoopback(host)
 }
 
 func _unused(_ ...any) {

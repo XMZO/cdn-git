@@ -78,6 +78,11 @@ var (
 
 func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, client *http.Client) {
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/health" {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			http.NotFound(w, r)
+			return
+		}
+
 		keys := make([]string, 0, len(runtime.WorkerSecretHeaderMap))
 		for k := range runtime.WorkerSecretHeaderMap {
 			keys = append(keys, k)
@@ -258,6 +263,18 @@ func normalizeHostOnly(hostport string) string {
 		return strings.Trim(hp, "[]")
 	}
 	return strings.Split(hp, ":")[0]
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func cloneRequestHeaders(src http.Header) http.Header {

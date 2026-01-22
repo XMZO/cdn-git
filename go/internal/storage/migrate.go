@@ -9,11 +9,8 @@ func Migrate(db *sql.DB) error {
 	if err := db.QueryRow("PRAGMA user_version;").Scan(&currentVersion); err != nil {
 		return err
 	}
-	if currentVersion >= 1 {
-		return nil
-	}
-
-	_, err := db.Exec(`
+	if currentVersion < 1 {
+		_, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -54,10 +51,48 @@ CREATE TABLE IF NOT EXISTS config_versions (
   FOREIGN KEY(created_by) REFERENCES users(id)
 );
 `)
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+
+		if _, err := db.Exec("PRAGMA user_version = 1;"); err != nil {
+			return err
+		}
+		currentVersion = 1
 	}
 
-	_, err = db.Exec("PRAGMA user_version = 1;")
-	return err
+	if currentVersion < 2 {
+		_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS traffic_totals (
+  service TEXT PRIMARY KEY,
+  bytes_in INTEGER NOT NULL DEFAULT 0,
+  bytes_out INTEGER NOT NULL DEFAULT 0,
+  requests INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS traffic_buckets (
+  kind TEXT NOT NULL,
+  start_ts INTEGER NOT NULL,
+  service TEXT NOT NULL,
+  bytes_in INTEGER NOT NULL DEFAULT 0,
+  bytes_out INTEGER NOT NULL DEFAULT 0,
+  requests INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (kind, start_ts, service)
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_buckets_kind_start ON traffic_buckets(kind, start_ts);
+CREATE INDEX IF NOT EXISTS idx_traffic_buckets_service ON traffic_buckets(service);
+`)
+		if err != nil {
+			return err
+		}
+
+		if _, err := db.Exec("PRAGMA user_version = 2;"); err != nil {
+			return err
+		}
+		currentVersion = 2
+	}
+
+	return nil
 }

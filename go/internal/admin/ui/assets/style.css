@@ -562,6 +562,7 @@ body.hz-modal-open {
 
 input[type="text"],
 input[type="password"],
+input[type="number"],
 textarea,
 select {
   width: 100%;
@@ -576,6 +577,7 @@ select {
 @media (prefers-color-scheme: light) {
   input[type="text"],
   input[type="password"],
+  input[type="number"],
   textarea,
   select {
     background: #ffffff;
@@ -712,4 +714,119 @@ table.table {
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.12);
   color: var(--text);
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.segmented .seg {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease,
+    color 160ms ease;
+}
+
+.segmented .seg:hover {
+  background: var(--panel2);
+  color: var(--text);
+}
+
+.segmented .seg.active {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.hz-traffic-controls {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.hz-traffic-inline {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.hz-chart {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.12);
+  padding: 12px;
+}
+
+@media (prefers-color-scheme: light) {
+  .hz-chart {
+    background: rgba(2, 6, 23, 0.02);
+  }
+}
+
+.hz-chart svg {
+  width: 100%;
+  height: 220px;
+  display: block;
+}
+
+.hz-chart-grid {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+@media (prefers-color-scheme: light) {
+  .hz-chart-grid {
+    stroke: rgba(2, 6, 23, 0.08);
+  }
+}
+
+.hz-chart-line {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hz-chart-line.out {
+  stroke: rgba(59, 130, 246, 0.95);
+}
+
+.hz-chart-line.in {
+  stroke: rgba(34, 197, 94, 0.95);
+}
+
+.hz-chart-legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.dot.out {
+  background: rgba(59, 130, 246, 0.95);
+}
+
+.dot.in {
+  background: rgba(34, 197, 94, 0.95);
 }

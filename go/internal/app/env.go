@@ -6,6 +6,7 @@ import (
 	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/storage"
+	"hazuki-go/internal/traffic"
 )
 
 type runtimeEnv struct {
@@ -14,4 +15,5 @@ type runtimeEnv struct {
 	initialCfg model.AppConfig
 	sessionTTL int
 	metrics    *metrics.Registry
+	traffic    *traffic.Persister
 }

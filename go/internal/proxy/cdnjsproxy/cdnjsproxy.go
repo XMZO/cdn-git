@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -136,6 +137,11 @@ func NewDynamicHandler(getRuntime func() RuntimeConfig, getRedis func() *redis.C
 
 func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, redisClient *redis.Client, client *http.Client) {
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/health" {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			http.NotFound(w, r)
+			return
+		}
+
 		status := "disabled"
 		if redisClient != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 250*time.Millisecond)
@@ -557,4 +563,16 @@ func strconvItoa(n int) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

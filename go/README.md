@@ -38,7 +38,7 @@ Then open:
 
 ## Notes
 
-- Config is stored in SQLite (`HAZUKI_DB_PATH`, default: `data/hazuki.db` relative to your working dir).
+- Config is stored in SQLite (`HAZUKI_DB_PATH`, default: `data/hazuki.db` relative to your working dir). With Docker Compose, the DB file is `./data/hazuki.db` on the host (bind mounted to `/data`).
 - Config changes apply immediately (hot reload). Port changes require a process restart.
 - `HAZUKI_MASTER_KEY` enables at-rest encryption for secrets already stored as `enc:v1:...`.
 - `cdnjs` cache TTL is suffix-based (compatible with the Node defaults) and can be overridden in the admin panel (`Default TTL` + `TTL Overrides`).

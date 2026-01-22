@@ -101,10 +101,10 @@ func Wrap(svc *Service, next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Avoid polluting traffic stats with internal health/stats probes.
+		// Avoid polluting traffic stats with internal admin probes.
 		if r != nil {
 			p := r.URL.Path
-			if strings.HasPrefix(p, "/_hazuki/health") || strings.HasPrefix(p, "/_hazuki/stats") {
+			if strings.HasPrefix(p, "/_hazuki/") {
 				next.ServeHTTP(w, r)
 				return
 			}

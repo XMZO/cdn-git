@@ -36,8 +36,8 @@ services:
     env_file:
       - .env
     volumes:
-      - hazuki-go-data:/data
+      # Bind mount for easy access to the SQLite DB (./data/hazuki.db)
+      - ./data:/data
 
 volumes:
-  hazuki-go-data:
   hazuki-go-redis-data:
