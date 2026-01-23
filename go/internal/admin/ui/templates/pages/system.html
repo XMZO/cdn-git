@@ -71,6 +71,26 @@
     </div>
 
     <div class="card">
+      <h3>{{.T "system.masterKeyVerifyTitle"}}</h3>
+      <div class="muted small">{{.T "system.masterKeyVerifyHint"}}</div>
+      <form method="post" action="/system/master-key/verify" class="form" style="margin-top:12px;">
+        <div class="grid cols-2">
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyCurrent"}}</label>
+            <input type="password" name="currentMasterKey" autocomplete="off" placeholder="{{.T "system.masterKeyCurrentPlaceholder"}}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyPassword"}}</label>
+            <input type="password" name="password" autocomplete="current-password" placeholder="{{.T "system.masterKeyPasswordPlaceholder"}}" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" type="submit">{{.T "system.masterKeyVerify"}}</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
       <h3>{{.T "system.masterKeyTitle"}}</h3>
       <div class="muted small">{{.T "system.masterKeyHint"}}</div>
       <form method="post" action="/system/master-key" class="form" style="margin-top:12px;">

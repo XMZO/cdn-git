@@ -316,6 +316,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/system", s.wrapRequireAuth(s.system))
 	mux.HandleFunc("/system/timezone", s.wrapRequireAuth(s.systemTimeZone))
 	mux.HandleFunc("/system/master-key", s.wrapRequireAuth(s.systemMasterKey))
+	mux.HandleFunc("/system/master-key/verify", s.wrapRequireAuth(s.systemMasterKeyVerify))
 	mux.HandleFunc("/traffic", s.wrapRequireAuth(s.traffic))
 	mux.HandleFunc("/traffic/retention", s.wrapRequireAuth(s.trafficRetention))
 	mux.HandleFunc("/traffic/cleanup", s.wrapRequireAuth(s.trafficCleanup))
@@ -1052,6 +1053,8 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 				} else {
 					notice = s.t(r, "system.masterKeyRotatedNotice")
 				}
+			} else if ok == "masterKeyVerify" {
+				notice = s.t(r, "system.masterKeyVerifiedNotice")
 			} else {
 				notice = s.t(r, "common.saved")
 			}
@@ -1068,6 +1071,8 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 			errMsg = s.t(r, "error.masterKeyPasswordInvalid")
 		case "masterKeyConfirm":
 			errMsg = s.t(r, "error.masterKeyConfirmMismatch")
+		case "masterKeyNotSet":
+			errMsg = s.t(r, "error.masterKeyNotSet")
 		case "masterKeyNew":
 			errMsg = s.t(r, "error.masterKeyNewInvalid")
 		case "masterKeyDecrypt":
@@ -1141,7 +1146,7 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 
 		Ports: cfg.Ports,
 
-		AdminStatus: checkServiceStatus(r.Context(), s.port),
+		AdminStatus: checkServiceStatusWithCookie(r.Context(), s.port, sessionCookieValue(r)),
 		TorcherinoStatus: func() serviceStatus {
 			if cfg.Torcherino.Disabled {
 				return disabledServiceStatus(cfg.Ports.Torcherino)
@@ -1250,6 +1255,49 @@ func (s *server) systemMasterKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/system?ok=masterKey&env=0", http.StatusFound)
+}
+
+func (s *server) systemMasterKeyVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	st := getState(r.Context())
+	if st == nil || st.User == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/system?err=masterKeyRotate", http.StatusFound)
+		return
+	}
+
+	currentMasterKey := strings.TrimSpace(r.FormValue("currentMasterKey"))
+	password := r.FormValue("password")
+
+	currentEnvKey := strings.TrimSpace(os.Getenv("HAZUKI_MASTER_KEY"))
+	if currentEnvKey == "" {
+		http.Redirect(w, r, "/system?err=masterKeyNotSet", http.StatusFound)
+		return
+	}
+	if currentMasterKey != currentEnvKey {
+		http.Redirect(w, r, "/system?err=masterKeyCurrent", http.StatusFound)
+		return
+	}
+
+	_, ok, err := storage.VerifyUserPassword(s.db, st.User.Username, password)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	if !ok {
+		http.Redirect(w, r, "/system?err=masterKeyPassword", http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, "/system?ok=masterKeyVerify", http.StatusFound)
 }
 
 func (s *server) traffic(w http.ResponseWriter, r *http.Request) {
@@ -3344,6 +3392,10 @@ func disabledServiceStatus(port int) serviceStatus {
 }
 
 func checkServiceStatus(ctx context.Context, port int) serviceStatus {
+	return checkServiceStatusWithCookie(ctx, port, "")
+}
+
+func checkServiceStatusWithCookie(ctx context.Context, port int, sessionCookie string) serviceStatus {
 	if port <= 0 || port > 65535 {
 		return serviceStatus{Status: "disabled"}
 	}
@@ -3359,8 +3411,15 @@ func checkServiceStatus(ctx context.Context, port int) serviceStatus {
 		return serviceStatus{Addr: addr, URL: u, Status: "error", Error: err.Error()}
 	}
 
+	if strings.TrimSpace(sessionCookie) != "" {
+		req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionCookie})
+	}
+
 	client := &http.Client{
 		Timeout: 650 * time.Millisecond,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	start := time.Now()
@@ -3423,6 +3482,17 @@ func checkServiceStatus(ctx context.Context, port int) serviceStatus {
 		Status:    "ok",
 		LatencyMS: latency.Milliseconds(),
 	}
+}
+
+func sessionCookieValue(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	c, err := r.Cookie(cookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }
 
 func getSQLiteMainDBPathAndSize(ctx context.Context, db *sql.DB) (path string, sizeBytes int64, err error) {
