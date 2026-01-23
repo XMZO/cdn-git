@@ -59,9 +59,9 @@
 
         <div class="field">
           <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
-            <input type="checkbox" name="serviceEnabled" {{if not .Sakuya.Disabled}}checked{{end}} />
+            <input type="checkbox" name="serviceEnabled" {{if and (not .Sakuya.Disabled) (not .Sakuya.Oplist.Disabled)}}checked{{end}} />
             <input type="hidden" name="serviceEnabled" value="0" />
-            {{.T "common.enableService"}} <span class="key">sakuya.disabled</span>
+            {{.T "common.enableService"}} <span class="key">sakuya.oplist.disabled</span>
           </label>
           <div class="hint">{{.T "sakuya.serviceToggleHint"}}</div>
         </div>

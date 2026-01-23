@@ -25,6 +25,9 @@ type PortsConfig struct {
 	Cdnjs      int `json:"cdnjs"`
 	Git        int `json:"git"`
 	Sakuya     int `json:"sakuya"`
+
+	// Optional; older configs won't have it.
+	SakuyaOneDrive int `json:"sakuyaOneDrive"`
 }
 
 type RedisConfig struct {
@@ -86,6 +89,8 @@ type TorcherinoConfig struct {
 }
 
 type SakuyaConfig struct {
+	// Legacy: originally used as a single switch for Sakuya features.
+	// Now treated as an alias for "oplist disabled" for backward compatibility.
 	Disabled bool `json:"disabled,omitempty"`
 
 	Oplist   SakuyaOplist   `json:"oplist"`
@@ -93,13 +98,27 @@ type SakuyaConfig struct {
 }
 
 type SakuyaOplist struct {
+	Disabled bool `json:"disabled,omitempty"`
+
 	Address   string `json:"address"`
 	Token     string `json:"token"`
 	PublicURL string `json:"publicUrl,omitempty"`
 }
 
 type SakuyaOneDrive struct {
-	// Placeholder for future.
+	Disabled bool `json:"disabled,omitempty"`
+
+	Upstream       string `json:"upstream"`
+	UpstreamMobile string `json:"upstreamMobile"`
+	UpstreamPath   string `json:"upstreamPath"`
+	HTTPS          bool   `json:"https"`
+
+	DisableCache bool `json:"disableCache"`
+
+	BlockedRegions     []string `json:"blockedRegions"`
+	BlockedIpAddresses []string `json:"blockedIpAddresses"`
+
+	ReplaceDict map[string]string `json:"replaceDict"`
 }
 
 func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (string, bool)) (AppConfig, error) {
@@ -107,14 +126,41 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 	oplistToken := strings.TrimSpace(getEnv("OPLIST_TOKEN"))
 	oplistEnabled := oplistAddr != "" && oplistToken != ""
 
+	odUpstream := strings.TrimSpace(getEnv("ONEDRIVE_UPSTREAM"))
+	odUpstreamMobile := strings.TrimSpace(defaultString(getEnv("ONEDRIVE_UPSTREAM_MOBILE"), odUpstream))
+	odUpstreamPath := strings.TrimSpace(defaultString(getEnv("ONEDRIVE_UPSTREAM_PATH"), "/"))
+	odHTTPS := parseBool(getEnv("ONEDRIVE_HTTPS"), true)
+	odDisableCache := parseBool(getEnv("ONEDRIVE_DISABLE_CACHE"), false)
+	odBlockedRegions := parseCSV(getEnv("ONEDRIVE_BLOCKED_REGION"))
+	if len(odBlockedRegions) == 0 {
+		odBlockedRegions = []string{"KP", "SY", "PK", "CU"}
+	}
+	odBlockedIPs := parseCSV(getEnv("ONEDRIVE_BLOCKED_IP_ADDRESS"))
+	if len(odBlockedIPs) == 0 {
+		odBlockedIPs = []string{"0.0.0.0", "127.0.0.1"}
+	}
+	odReplaceDict := map[string]string{
+		"$upstream":    "$custom_domain",
+		"//sunpma.com": "",
+	}
+	if v := strings.TrimSpace(getEnv("ONEDRIVE_REPLACE_DICT")); v != "" {
+		m, err := parseStringMapJSON(v)
+		if err != nil {
+			return AppConfig{}, fmt.Errorf("ONEDRIVE_REPLACE_DICT: %w", err)
+		}
+		odReplaceDict = m
+	}
+	onedriveEnabled := odUpstream != ""
+
 	cfg := AppConfig{
 		Version: 1,
 		Ports: PortsConfig{
-			Admin:      3100,
-			Torcherino: 3000,
-			Cdnjs:      3001,
-			Git:        3002,
-			Sakuya:     3200,
+			Admin:          3100,
+			Torcherino:     3000,
+			Cdnjs:          3001,
+			Git:            3002,
+			Sakuya:         3200,
+			SakuyaOneDrive: 3201,
 		},
 		Cdnjs: CdnjsConfig{
 			AssetURL:       strings.TrimSpace(defaultString(getEnv("ASSET_URL"), "https://cdn.jsdelivr.net")),
@@ -161,13 +207,28 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			WorkerSecretHeaderMap: map[string]string{},
 		},
 		Sakuya: SakuyaConfig{
-			Disabled: !oplistEnabled,
+			Disabled: false,
 			Oplist: SakuyaOplist{
+				Disabled:  !oplistEnabled,
 				Address:   oplistAddr,
 				Token:     oplistToken,
 				PublicURL: strings.TrimSpace(getEnv("OPLIST_PUBLIC_URL")),
 			},
-			OneDrive: SakuyaOneDrive{},
+			OneDrive: SakuyaOneDrive{
+				Disabled: !onedriveEnabled,
+
+				Upstream:       odUpstream,
+				UpstreamMobile: odUpstreamMobile,
+				UpstreamPath:   odUpstreamPath,
+				HTTPS:          odHTTPS,
+
+				DisableCache: odDisableCache,
+
+				BlockedRegions:     odBlockedRegions,
+				BlockedIpAddresses: odBlockedIPs,
+
+				ReplaceDict: odReplaceDict,
+			},
 		},
 	}
 
@@ -254,6 +315,10 @@ func (c AppConfig) Validate() error {
 	if c.Ports.Sakuya != 0 && (c.Ports.Sakuya < 1 || c.Ports.Sakuya > 65535) {
 		return fmt.Errorf("%s must be 1-65535", "ports.sakuya")
 	}
+	// Backward-compatibility: older configs won't have ports.sakuyaOneDrive yet.
+	if c.Ports.SakuyaOneDrive != 0 && (c.Ports.SakuyaOneDrive < 1 || c.Ports.SakuyaOneDrive > 65535) {
+		return fmt.Errorf("%s must be 1-65535", "ports.sakuyaOneDrive")
+	}
 
 	// Prevent port conflicts among enabled services/instances.
 	usedPorts := map[int]string{
@@ -269,10 +334,11 @@ func (c AppConfig) Validate() error {
 		usedPorts[port] = name
 		return nil
 	}
-	sakuyaConfigured := strings.TrimSpace(c.Sakuya.Oplist.Address) != "" ||
+	oplistConfigured := strings.TrimSpace(c.Sakuya.Oplist.Address) != "" ||
 		strings.TrimSpace(c.Sakuya.Oplist.Token) != "" ||
 		strings.TrimSpace(c.Sakuya.Oplist.PublicURL) != ""
-	sakuyaEnabled := !c.Sakuya.Disabled && sakuyaConfigured
+	oplistEnabled := !c.Sakuya.Disabled && !c.Sakuya.Oplist.Disabled && oplistConfigured
+	onedriveEnabled := !c.Sakuya.OneDrive.Disabled && strings.TrimSpace(c.Sakuya.OneDrive.Upstream) != ""
 	if !c.Torcherino.Disabled {
 		if err := addPort(c.Ports.Torcherino, "torcherino"); err != nil {
 			return err
@@ -288,12 +354,21 @@ func (c AppConfig) Validate() error {
 			return err
 		}
 	}
-	if sakuyaEnabled {
+	if oplistEnabled {
 		port := c.Ports.Sakuya
 		if port == 0 {
 			port = 3200
 		}
 		if err := addPort(port, "sakuya"); err != nil {
+			return err
+		}
+	}
+	if onedriveEnabled {
+		port := c.Ports.SakuyaOneDrive
+		if port == 0 {
+			port = 3201
+		}
+		if err := addPort(port, "sakuya(onedrive)"); err != nil {
 			return err
 		}
 	}
@@ -344,7 +419,7 @@ func (c AppConfig) Validate() error {
 		}
 	}
 
-	if sakuyaEnabled {
+	if oplistEnabled {
 		if strings.TrimSpace(c.Sakuya.Oplist.Token) == "" {
 			return errors.New("sakuya.oplist.token is required")
 		}
@@ -374,6 +449,26 @@ func (c AppConfig) Validate() error {
 			}
 			if strings.TrimSpace(pu.Host) == "" {
 				return errors.New("sakuya.oplist.publicUrl host is empty")
+			}
+		}
+	}
+	if onedriveEnabled {
+		up := strings.TrimSpace(c.Sakuya.OneDrive.Upstream)
+		if up == "" {
+			return errors.New("sakuya.onedrive.upstream is required")
+		}
+		if strings.Contains(up, "://") {
+			return errors.New("sakuya.onedrive.upstream must be a host (no scheme)")
+		}
+		if strings.Contains(up, "/") {
+			return errors.New("sakuya.onedrive.upstream must not contain '/'")
+		}
+		if m := strings.TrimSpace(c.Sakuya.OneDrive.UpstreamMobile); m != "" {
+			if strings.Contains(m, "://") {
+				return errors.New("sakuya.onedrive.upstreamMobile must be a host (no scheme)")
+			}
+			if strings.Contains(m, "/") {
+				return errors.New("sakuya.onedrive.upstreamMobile must not contain '/'")
 			}
 		}
 	}

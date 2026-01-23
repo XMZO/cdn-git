@@ -30,6 +30,7 @@ Then open:
 - Cdnjs proxy: `http://127.0.0.1:3001`
 - Git proxy: `http://127.0.0.1:3002`
 - Sakuya (Oplist): `http://127.0.0.1:3200`
+- Sakuya (OneDrive): `http://127.0.0.1:3201`
 - Torcherino proxy: `http://127.0.0.1:3000`
 
 ## Admin username/password

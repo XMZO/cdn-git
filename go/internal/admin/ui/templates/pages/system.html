@@ -169,10 +169,15 @@
 
         <div class="card" style="padding:14px;">
           <h3 style="margin:0 0 6px;">Sakuya</h3>
-          <div class="muted small">{{.T "common.port"}}：<code>{{.Ports.Sakuya}}</code></div>
-          <div style="margin-top:8px;">{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}</div>
-          {{if and (eq .SakuyaStatus.Status "error") .SakuyaStatus.Error}}
-            <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.SakuyaStatus.Error}}</div>
+          <div class="muted small">Oplist {{.T "common.port"}}：<code>{{.Ports.Sakuya}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" (statusCtx $ .SakuyaOplistStatus)}}</div>
+          {{if and (eq .SakuyaOplistStatus.Status "error") .SakuyaOplistStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.SakuyaOplistStatus.Error}}</div>
+          {{end}}
+          <div class="muted small" style="margin-top:12px;">OneDrive {{.T "common.port"}}：<code>{{.Ports.SakuyaOneDrive}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" (statusCtx $ .SakuyaOneDriveStatus)}}</div>
+          {{if and (eq .SakuyaOneDriveStatus.Status "error") .SakuyaOneDriveStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.SakuyaOneDriveStatus.Error}}</div>
           {{end}}
         </div>
       </div>

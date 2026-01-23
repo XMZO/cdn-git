@@ -192,8 +192,21 @@ type sakuyaOneDriveData struct {
 	layoutData
 	Sakuya model.SakuyaConfig
 
-	SakuyaPort    int
-	SakuyaBaseURL string
+	SakuyaOneDrivePort      int
+	SakuyaOneDrivePortValue string
+
+	OneDriveUpstreamValue       string
+	OneDriveUpstreamMobileValue string
+	OneDriveUpstreamPathValue   string
+	OneDriveHTTPSValue          bool
+	OneDriveDisableCacheValue   bool
+	OneDriveBlockedRegionsValue string
+	OneDriveBlockedIPsValue     string
+	OneDriveReplaceDictValue    string
+
+	SakuyaOneDriveBaseURL   string
+	SakuyaOneDriveHealthURL string
+	SakuyaOneDriveStatus    serviceStatus
 }
 
 type accountData struct {
@@ -230,11 +243,12 @@ type systemData struct {
 
 	Ports model.PortsConfig
 
-	AdminStatus      serviceStatus
-	TorcherinoStatus serviceStatus
-	CdnjsStatus      serviceStatus
-	GitStatus        serviceStatus
-	SakuyaStatus     serviceStatus
+	AdminStatus          serviceStatus
+	TorcherinoStatus     serviceStatus
+	CdnjsStatus          serviceStatus
+	GitStatus            serviceStatus
+	SakuyaOplistStatus   serviceStatus
+	SakuyaOneDriveStatus serviceStatus
 
 	Redis redisStatus
 }
@@ -623,6 +637,11 @@ func (s *server) healthSub(w http.ResponseWriter, r *http.Request) {
 		port = cfg.Ports.Sakuya
 		if port == 0 {
 			port = 3200
+		}
+	case "sakuya-onedrive", "sakuya_onedrive":
+		port = cfg.Ports.SakuyaOneDrive
+		if port == 0 {
+			port = 3201
 		}
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -1156,6 +1175,9 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 	if ports.Sakuya == 0 {
 		ports.Sakuya = 3200
 	}
+	if ports.SakuyaOneDrive == 0 {
+		ports.SakuyaOneDrive = 3201
+	}
 
 	s.render(w, r, systemData{
 		layoutData: layoutData{
@@ -1204,9 +1226,16 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 			}
 			return checkServiceStatus(r.Context(), cfg.Ports.Git)
 		}(),
-		SakuyaStatus: func() serviceStatus {
+		SakuyaOplistStatus: func() serviceStatus {
 			port := ports.Sakuya
-			if cfg.Sakuya.Disabled || strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" || strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
+			if cfg.Sakuya.Disabled || cfg.Sakuya.Oplist.Disabled || strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" || strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
+				return disabledServiceStatus(port)
+			}
+			return checkServiceStatus(r.Context(), port)
+		}(),
+		SakuyaOneDriveStatus: func() serviceStatus {
+			port := ports.SakuyaOneDrive
+			if cfg.Sakuya.OneDrive.Disabled || strings.TrimSpace(cfg.Sakuya.OneDrive.Upstream) == "" {
 				return disabledServiceStatus(port)
 			}
 			return checkServiceStatus(r.Context(), port)
@@ -2441,7 +2470,7 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	curEnabled := !cfg.Sakuya.Disabled &&
+	curEnabled := !cfg.Sakuya.Disabled && !cfg.Sakuya.Oplist.Disabled &&
 		strings.TrimSpace(cfg.Sakuya.Oplist.Address) != "" &&
 		strings.TrimSpace(cfg.Sakuya.Oplist.Token) != ""
 	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), curEnabled)
@@ -2494,7 +2523,8 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
 			next := cur
 			next.Ports.Sakuya = port
-			next.Sakuya.Disabled = !serviceEnabled
+			next.Sakuya.Disabled = false
+			next.Sakuya.Oplist.Disabled = !serviceEnabled
 			next.Sakuya.Oplist.Address = address
 			next.Sakuya.Oplist.PublicURL = publicURL
 			if clearToken {
@@ -2508,7 +2538,8 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Ports.Sakuya = port
-		draft.Sakuya.Disabled = !serviceEnabled
+		draft.Sakuya.Disabled = false
+		draft.Sakuya.Oplist.Disabled = !serviceEnabled
 		draft.Sakuya.Oplist.Address = address
 		draft.Sakuya.Oplist.PublicURL = publicURL
 		s.renderSakuyaOplistForm(w, r, st, draft, "", s.errText(r, err), portRaw, address, publicURL, "")
@@ -2521,11 +2552,6 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 func (s *server) configSakuyaOneDrive(w http.ResponseWriter, r *http.Request) {
 	st := getState(r.Context())
 	title := s.t(r, "page.sakuya.onedrive.title")
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
@@ -2541,22 +2567,130 @@ func (s *server) configSakuyaOneDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	port := cfg.Ports.Sakuya
-	if port == 0 {
-		port = 3200
+	notice := ""
+	if r.URL.Query().Get("ok") != "" {
+		notice = s.t(r, "common.applied")
 	}
 
-	s.render(w, r, sakuyaOneDriveData{
-		layoutData: layoutData{
-			Title:        title,
-			BodyTemplate: "sakuya_onedrive",
-			User:         st.User,
-			HasUsers:     st.HasUsers,
+	switch r.Method {
+	case http.MethodGet:
+		s.renderSakuyaOneDriveForm(w, r, st, cfg, notice, "", "", "", "", "", "", "", "")
+		return
+	case http.MethodPost:
+		// continue
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		s.renderSakuyaOneDriveForm(w, r, st, cfg, "", s.t(r, "error.badRequest"), "", "", "", "", "", "", "")
+		return
+	}
+
+	curEnabled := !cfg.Sakuya.OneDrive.Disabled && strings.TrimSpace(cfg.Sakuya.OneDrive.Upstream) != ""
+	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), curEnabled)
+
+	upstream := strings.TrimSpace(r.FormValue("oneDriveUpstream"))
+	upstreamMobile := strings.TrimSpace(r.FormValue("oneDriveUpstreamMobile"))
+	upstreamPath := normalizePath(r.FormValue("oneDriveUpstreamPath"))
+
+	httpsEnabled := parseBool(r.FormValue("oneDriveHTTPS"), cfg.Sakuya.OneDrive.HTTPS)
+	disableCache := parseBool(r.FormValue("oneDriveDisableCache"), cfg.Sakuya.OneDrive.DisableCache)
+
+	blockedRegionsRaw := strings.TrimSpace(r.FormValue("oneDriveBlockedRegions"))
+	blockedRegions := parseCSV(blockedRegionsRaw)
+	blockedIPsRaw := strings.TrimSpace(r.FormValue("oneDriveBlockedIPs"))
+	blockedIPs := parseCSV(blockedIPsRaw)
+
+	replaceDictRaw := r.FormValue("oneDriveReplaceDictJson")
+	replaceDict, err := parseStringMapJSON(replaceDictRaw)
+	if err != nil {
+		draft := cfg
+		draft.Sakuya.OneDrive.Disabled = !serviceEnabled
+		draft.Sakuya.OneDrive.Upstream = upstream
+		draft.Sakuya.OneDrive.UpstreamMobile = upstreamMobile
+		draft.Sakuya.OneDrive.UpstreamPath = upstreamPath
+		draft.Sakuya.OneDrive.HTTPS = httpsEnabled
+		draft.Sakuya.OneDrive.DisableCache = disableCache
+		draft.Sakuya.OneDrive.BlockedRegions = blockedRegions
+		draft.Sakuya.OneDrive.BlockedIpAddresses = blockedIPs
+		s.renderSakuyaOneDriveForm(w, r, st, draft, "", "ONEDRIVE_REPLACE_DICT: "+err.Error(), r.FormValue("sakuyaOneDrivePort"), upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+		return
+	}
+
+	if serviceEnabled {
+		if upstream == "" {
+			s.renderSakuyaOneDriveForm(w, r, st, cfg, "", s.t(r, "error.configInvalid"), r.FormValue("sakuyaOneDrivePort"), upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+			return
+		}
+		if strings.Contains(upstream, "://") || strings.Contains(upstream, "/") {
+			s.renderSakuyaOneDriveForm(w, r, st, cfg, "", s.t(r, "error.configInvalid"), r.FormValue("sakuyaOneDrivePort"), upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+			return
+		}
+		if upstreamMobile != "" && (strings.Contains(upstreamMobile, "://") || strings.Contains(upstreamMobile, "/")) {
+			s.renderSakuyaOneDriveForm(w, r, st, cfg, "", s.t(r, "error.configInvalid"), r.FormValue("sakuyaOneDrivePort"), upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+			return
+		}
+	}
+
+	portFallback := cfg.Ports.SakuyaOneDrive
+	if portFallback == 0 {
+		portFallback = 3201
+	}
+	portRaw := strings.TrimSpace(r.FormValue("sakuyaOneDrivePort"))
+	port, err := parsePort(portRaw, portFallback)
+	if err != nil {
+		draft := cfg
+		draft.Sakuya.OneDrive.Disabled = !serviceEnabled
+		draft.Sakuya.OneDrive.Upstream = upstream
+		draft.Sakuya.OneDrive.UpstreamMobile = upstreamMobile
+		draft.Sakuya.OneDrive.UpstreamPath = upstreamPath
+		draft.Sakuya.OneDrive.HTTPS = httpsEnabled
+		draft.Sakuya.OneDrive.DisableCache = disableCache
+		draft.Sakuya.OneDrive.BlockedRegions = blockedRegions
+		draft.Sakuya.OneDrive.BlockedIpAddresses = blockedIPs
+		draft.Sakuya.OneDrive.ReplaceDict = replaceDict
+		s.renderSakuyaOneDriveForm(w, r, st, draft, "", s.errText(r, err), portRaw, upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+		return
+	}
+
+	userID := st.User.ID
+	err = s.config.Update(storage.UpdateRequest{
+		UserID: &userID,
+		Note:   "edit:sakuya:onedrive",
+		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
+			next := cur
+			next.Ports.SakuyaOneDrive = port
+			next.Sakuya.OneDrive.Disabled = !serviceEnabled
+			next.Sakuya.OneDrive.Upstream = upstream
+			next.Sakuya.OneDrive.UpstreamMobile = upstreamMobile
+			next.Sakuya.OneDrive.UpstreamPath = upstreamPath
+			next.Sakuya.OneDrive.HTTPS = httpsEnabled
+			next.Sakuya.OneDrive.DisableCache = disableCache
+			next.Sakuya.OneDrive.BlockedRegions = blockedRegions
+			next.Sakuya.OneDrive.BlockedIpAddresses = blockedIPs
+			next.Sakuya.OneDrive.ReplaceDict = replaceDict
+			return next, nil
 		},
-		Sakuya:        cfg.Sakuya,
-		SakuyaPort:    port,
-		SakuyaBaseURL: baseURLForPort(r, port),
 	})
+	if err != nil {
+		draft := cfg
+		draft.Ports.SakuyaOneDrive = port
+		draft.Sakuya.OneDrive.Disabled = !serviceEnabled
+		draft.Sakuya.OneDrive.Upstream = upstream
+		draft.Sakuya.OneDrive.UpstreamMobile = upstreamMobile
+		draft.Sakuya.OneDrive.UpstreamPath = upstreamPath
+		draft.Sakuya.OneDrive.HTTPS = httpsEnabled
+		draft.Sakuya.OneDrive.DisableCache = disableCache
+		draft.Sakuya.OneDrive.BlockedRegions = blockedRegions
+		draft.Sakuya.OneDrive.BlockedIpAddresses = blockedIPs
+		draft.Sakuya.OneDrive.ReplaceDict = replaceDict
+		s.renderSakuyaOneDriveForm(w, r, st, draft, "", s.errText(r, err), portRaw, upstream, upstreamMobile, upstreamPath, blockedRegionsRaw, blockedIPsRaw, replaceDictRaw)
+		return
+	}
+
+	http.Redirect(w, r, "/config/sakuya/onedrive?ok=1", http.StatusFound)
 }
 
 func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
@@ -3480,7 +3614,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 	}
 	baseURL := baseURLForPort(r, port)
 	sakuyaSt := func() serviceStatus {
-		if cfg.Sakuya.Disabled || strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" || strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
+		if cfg.Sakuya.Disabled || cfg.Sakuya.Oplist.Disabled || strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" || strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
 			return disabledServiceStatus(port)
 		}
 		return checkServiceStatus(r.Context(), port)
@@ -3509,6 +3643,94 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 		SakuyaBaseURL:   baseURL,
 		SakuyaHealthURL: "/_hazuki/health/sakuya",
 		SakuyaStatus:    sakuyaSt,
+	})
+}
+
+func (s *server) renderSakuyaOneDriveForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, sakuyaOneDrivePortValue, upstreamValue, upstreamMobileValue, upstreamPathValue, blockedRegionsValue, blockedIPsValue, replaceDictRaw string) {
+	if strings.TrimSpace(sakuyaOneDrivePortValue) == "" {
+		port := cfg.Ports.SakuyaOneDrive
+		if port == 0 {
+			port = 3201
+		}
+		sakuyaOneDrivePortValue = strconv.Itoa(port)
+	}
+	if strings.TrimSpace(upstreamValue) == "" {
+		upstreamValue = cfg.Sakuya.OneDrive.Upstream
+	}
+	if strings.TrimSpace(upstreamMobileValue) == "" {
+		upstreamMobileValue = cfg.Sakuya.OneDrive.UpstreamMobile
+	}
+	if strings.TrimSpace(upstreamPathValue) == "" {
+		upstreamPathValue = defaultString(cfg.Sakuya.OneDrive.UpstreamPath, "/")
+	}
+	if strings.TrimSpace(blockedRegionsValue) == "" {
+		regions := cfg.Sakuya.OneDrive.BlockedRegions
+		if regions == nil {
+			regions = []string{"KP", "SY", "PK", "CU"}
+		}
+		blockedRegionsValue = strings.Join(regions, ",")
+	}
+	if strings.TrimSpace(blockedIPsValue) == "" {
+		ips := cfg.Sakuya.OneDrive.BlockedIpAddresses
+		if ips == nil {
+			ips = []string{"0.0.0.0", "127.0.0.1"}
+		}
+		blockedIPsValue = strings.Join(ips, ",")
+	}
+
+	replaceDictJSON := ""
+	if strings.TrimSpace(replaceDictRaw) != "" {
+		replaceDictJSON = replaceDictRaw
+	} else {
+		dict := cfg.Sakuya.OneDrive.ReplaceDict
+		if dict == nil {
+			dict = map[string]string{
+				"$upstream":    "$custom_domain",
+				"//sunpma.com": "",
+			}
+		}
+		pretty, _ := json.MarshalIndent(dict, "", "  ")
+		replaceDictJSON = string(pretty)
+	}
+
+	port := cfg.Ports.SakuyaOneDrive
+	if port == 0 {
+		port = 3201
+	}
+	baseURL := baseURLForPort(r, port)
+	sakuyaSt := func() serviceStatus {
+		if cfg.Sakuya.OneDrive.Disabled || strings.TrimSpace(cfg.Sakuya.OneDrive.Upstream) == "" {
+			return disabledServiceStatus(port)
+		}
+		return checkServiceStatus(r.Context(), port)
+	}()
+
+	s.render(w, r, sakuyaOneDriveData{
+		layoutData: layoutData{
+			Title:        s.t(r, "page.sakuya.onedrive.title"),
+			BodyTemplate: "sakuya_onedrive",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Notice:       notice,
+			Error:        errMsg,
+		},
+		Sakuya: cfg.Sakuya,
+
+		SakuyaOneDrivePort:      port,
+		SakuyaOneDrivePortValue: sakuyaOneDrivePortValue,
+
+		OneDriveUpstreamValue:       upstreamValue,
+		OneDriveUpstreamMobileValue: upstreamMobileValue,
+		OneDriveUpstreamPathValue:   upstreamPathValue,
+		OneDriveHTTPSValue:          cfg.Sakuya.OneDrive.HTTPS,
+		OneDriveDisableCacheValue:   cfg.Sakuya.OneDrive.DisableCache,
+		OneDriveBlockedRegionsValue: blockedRegionsValue,
+		OneDriveBlockedIPsValue:     blockedIPsValue,
+		OneDriveReplaceDictValue:    replaceDictJSON,
+
+		SakuyaOneDriveBaseURL:   baseURL,
+		SakuyaOneDriveHealthURL: "/_hazuki/health/sakuya-onedrive",
+		SakuyaOneDriveStatus:    sakuyaSt,
 	})
 }
 
