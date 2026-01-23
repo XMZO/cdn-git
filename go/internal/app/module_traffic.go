@@ -33,4 +33,3 @@ func (trafficModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error)
 		},
 	}, nil
 }
-

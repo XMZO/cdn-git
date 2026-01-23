@@ -166,6 +166,9 @@ func (s *ConfigStore) GetRedactedConfig() (model.AppConfig, error) {
 	if cfg.Torcherino.WorkerSecretKey != "" {
 		cfg.Torcherino.WorkerSecretKey = "__SET__"
 	}
+	if cfg.Sakuya.Oplist.Token != "" {
+		cfg.Sakuya.Oplist.Token = "__SET__"
+	}
 	if cfg.Torcherino.WorkerSecretHeaderMap != nil {
 		out := make(map[string]string, len(cfg.Torcherino.WorkerSecretHeaderMap))
 		for k, v := range cfg.Torcherino.WorkerSecretHeaderMap {
@@ -265,6 +268,10 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 				}
 				next.Torcherino.WorkerSecretHeaderMap = copied
 			}
+		}
+
+		if _, ok := clearSet["sakuya.oplist.token"]; !ok && next.Sakuya.Oplist.Token == "" {
+			next.Sakuya.Oplist.Token = current.Sakuya.Oplist.Token
 		}
 	}
 
@@ -382,6 +389,14 @@ func encryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 			out.Torcherino.WorkerSecretKey = enc
 		}
 
+		if out.Sakuya.Oplist.Token != "" {
+			enc, err := crypto.EncryptString(out.Sakuya.Oplist.Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Sakuya.Oplist.Token = enc
+		}
+
 		if out.Torcherino.WorkerSecretHeaderMap != nil {
 			next := make(map[string]string, len(out.Torcherino.WorkerSecretHeaderMap))
 			for k, v := range out.Torcherino.WorkerSecretHeaderMap {
@@ -434,6 +449,14 @@ func decryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 				return model.AppConfig{}, err
 			}
 			out.Torcherino.WorkerSecretKey = dec
+		}
+
+		if out.Sakuya.Oplist.Token != "" {
+			dec, err := crypto.DecryptString(out.Sakuya.Oplist.Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Sakuya.Oplist.Token = dec
 		}
 
 		if out.Torcherino.WorkerSecretHeaderMap != nil {

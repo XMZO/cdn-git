@@ -1,0 +1,78 @@
+{{define "sakuya_oplist"}}
+  <div class="grid">
+    <div class="card">
+      <h2>{{.Title}} <span class="muted small">{{.T "sakuya.oplist.tagline"}}</span></h2>
+      <div class="muted small">{{.T "sakuya.oplist.subtitle"}}</div>
+      <div class="btn-row" style="margin-top:10px;">
+        <a class="btn primary" href="/config/sakuya/oplist">{{.T "sakuya.tab.oplist"}}</a>
+        <a class="btn" href="/config/sakuya/onedrive">{{.T "sakuya.tab.onedrive"}}</a>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.SakuyaBaseURL}}</code></span>
+        {{if .SakuyaStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}{{end}}
+        <a class="btn" href="{{.SakuyaHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
+      </div>
+      {{if and (eq .SakuyaStatus.Status "error") .SakuyaStatus.Error}}
+        <div class="muted small" style="margin-top:10px;">{{.T "common.healthErrorPrefix"}}：{{.SakuyaStatus.Error}}</div>
+      {{end}}
+    </div>
+
+    <form class="form" method="post" action="/config/sakuya/oplist">
+      <div class="card">
+        <h3>{{.T "common.basicConfig"}}</h3>
+        <div class="grid cols-2">
+          <div class="field">
+            <label>{{.T "common.port"}} <span class="key">ports.sakuya</span></label>
+            <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" />
+            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
+          </div>
+          <div class="field">
+            <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">OPLIST_ADDRESS</span></label>
+            <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
+            <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
+          </div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="field">
+            <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">OPLIST_PUBLIC_URL</span></label>
+            <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
+            <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
+          </div>
+          <div class="field">
+            <label>{{.T "sakuya.oplist.tokenLabel"}} <span class="key">OPLIST_TOKEN</span></label>
+            <input id="oplistTokenInput" type="password" name="oplistToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderNotSet"}}{{end}}" />
+            <div class="hint hint-line">
+              <span>{{.T "sakuya.oplist.tokenHint"}}</span>
+              <span class="spacer"></span>
+              <label class="pill" style="font-weight:800;">
+                <input type="checkbox" data-toggle-password="#oplistTokenInput" />
+                {{.T "common.show"}}
+              </label>
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="clearOplistToken" />
+                {{.T "common.clear"}}
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="serviceEnabled" {{if not .Sakuya.Disabled}}checked{{end}} />
+            <input type="hidden" name="serviceEnabled" value="0" />
+            {{.T "common.enableService"}} <span class="key">sakuya.disabled</span>
+          </label>
+          <div class="hint">{{.T "sakuya.serviceToggleHint"}}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>{{.T "common.save"}}</h3>
+        <div class="btn-row">
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
+        </div>
+      </div>
+    </form>
+  </div>
+{{end}}

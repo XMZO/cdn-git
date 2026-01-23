@@ -29,7 +29,7 @@ func TestTemplatesRender(t *testing.T) {
 			data: dashboardData{
 				layoutData:          layoutData{Title: "概览", BodyTemplate: "dashboard", User: adminUser, HasUsers: true},
 				UpdatedAt:           "2026-01-01 00:00:00",
-				Ports:               model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002},
+				Ports:               model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200},
 				AdminURL:            "http://127.0.0.1:3100",
 				TorcherinoURL:       "http://127.0.0.1:3000",
 				TorcherinoHealthURL: "http://127.0.0.1:3000/_hazuki/health",
@@ -60,12 +60,13 @@ func TestTemplatesRender(t *testing.T) {
 				VersionsCount: 2,
 				SessionsCount: 3,
 
-				Ports: model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002},
+				Ports: model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200},
 
 				AdminStatus:      serviceStatus{Status: "ok", LatencyMS: 1},
 				TorcherinoStatus: serviceStatus{Status: "ok", LatencyMS: 1},
 				CdnjsStatus:      serviceStatus{Status: "ok", LatencyMS: 1},
 				GitStatus:        serviceStatus{Status: "ok", LatencyMS: 1},
+				SakuyaStatus:     serviceStatus{Status: "disabled"},
 
 				Redis: redisStatus{
 					Addr:          "redis:6379",
@@ -117,6 +118,27 @@ func TestTemplatesRender(t *testing.T) {
 				GitHealthURL:      "http://127.0.0.1:3002/_hazuki/health",
 				BlockedRegionsCsv: "",
 				BlockedIPsCsv:     "",
+			},
+		},
+		{
+			name: "sakuya_oplist",
+			data: sakuyaOplistData{
+				layoutData:           layoutData{Title: "Sakuya · Oplist", BodyTemplate: "sakuya_oplist", User: adminUser, HasUsers: true},
+				Sakuya:               model.SakuyaConfig{Disabled: false},
+				SakuyaPortValue:      "3200",
+				OplistAddressValue:   "https://op.example.com",
+				OplistPublicURLValue: "https://download.example.com",
+				TokenIsSet:           true,
+				SakuyaBaseURL:        "http://127.0.0.1:3200",
+				SakuyaHealthURL:      "http://127.0.0.1:3200/_hazuki/health",
+				SakuyaStatus:         serviceStatus{Status: "disabled"},
+			},
+		},
+		{
+			name: "sakuya_onedrive",
+			data: sakuyaOneDriveData{
+				layoutData:    layoutData{Title: "Sakuya · OneDrive", BodyTemplate: "sakuya_onedrive", User: adminUser, HasUsers: true},
+				SakuyaBaseURL: "http://127.0.0.1:3200",
 			},
 		},
 		{

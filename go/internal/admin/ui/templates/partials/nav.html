@@ -24,6 +24,9 @@
     <a href="/config/git" class="{{if eq .BodyTemplate "git"}}active{{end}}">
       <span>{{.T "nav.git"}}</span>
     </a>
+    <a href="/config/sakuya/oplist" class="{{if or (eq .BodyTemplate "sakuya_oplist") (eq .BodyTemplate "sakuya_onedrive")}}active{{end}}">
+      <span>{{.T "nav.sakuya"}}</span>
+    </a>
 
     <div class="section">{{.T "nav.section.data"}}</div>
     <a href="/config/versions" class="{{if eq .BodyTemplate "versions"}}active{{end}}">

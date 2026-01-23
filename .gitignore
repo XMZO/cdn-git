@@ -45,3 +45,4 @@ data/
 *.7z
 
 go/worker.txt
+go/od.txt

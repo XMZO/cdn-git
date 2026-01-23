@@ -69,6 +69,7 @@ func Run(ctx context.Context) error {
 		trafficModule{},
 		adminModule{},
 		torcherinoModule{},
+		sakuyaModule{},
 		gitModule{},
 		cdnjsModule{},
 	}

@@ -26,8 +26,9 @@ services:
       - "3000:3000" # torcherino
       - "3001:3001" # cdnjs
       - "3002:3002" # git (default instance)
+      - "3200:3200" # sakuya (oplist)
       # If you enable extra git instances, expose their ports too (example):
-      # - "3003:3003" # git instance: gitInstances[0].port = 3003
+      # - "3004:3004" # git instance: gitInstances[0].port = 3004
     environment:
       - HAZUKI_DB_PATH=/data/hazuki.db
       # Override local default (go/.env.example uses 127.0.0.1)

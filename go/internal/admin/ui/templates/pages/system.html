@@ -166,6 +166,15 @@
             <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.GitStatus.Error}}</div>
           {{end}}
         </div>
+
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">Sakuya</h3>
+          <div class="muted small">{{.T "common.port"}}：<code>{{.Ports.Sakuya}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}</div>
+          {{if and (eq .SakuyaStatus.Status "error") .SakuyaStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.SakuyaStatus.Error}}</div>
+          {{end}}
+        </div>
       </div>
     </div>
 

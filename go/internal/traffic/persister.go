@@ -276,4 +276,3 @@ func diffSnapshot(cur, prev metrics.Snapshot) metrics.Snapshot {
 
 	return metrics.Snapshot{BytesIn: dIn, BytesOut: dOut, Requests: dReq}
 }
-

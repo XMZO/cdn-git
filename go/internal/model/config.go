@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,7 @@ type AppConfig struct {
 	Git          GitConfig           `json:"git"`
 	GitInstances []GitInstanceConfig `json:"gitInstances,omitempty"`
 	Torcherino   TorcherinoConfig    `json:"torcherino"`
+	Sakuya       SakuyaConfig        `json:"sakuya"`
 }
 
 type PortsConfig struct {
@@ -22,6 +24,7 @@ type PortsConfig struct {
 	Torcherino int `json:"torcherino"`
 	Cdnjs      int `json:"cdnjs"`
 	Git        int `json:"git"`
+	Sakuya     int `json:"sakuya"`
 }
 
 type RedisConfig struct {
@@ -82,7 +85,28 @@ type TorcherinoConfig struct {
 	WorkerSecretHeaderMap map[string]string `json:"workerSecretHeaderMap"`
 }
 
+type SakuyaConfig struct {
+	Disabled bool `json:"disabled,omitempty"`
+
+	Oplist   SakuyaOplist   `json:"oplist"`
+	OneDrive SakuyaOneDrive `json:"onedrive"`
+}
+
+type SakuyaOplist struct {
+	Address   string `json:"address"`
+	Token     string `json:"token"`
+	PublicURL string `json:"publicUrl,omitempty"`
+}
+
+type SakuyaOneDrive struct {
+	// Placeholder for future.
+}
+
 func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (string, bool)) (AppConfig, error) {
+	oplistAddr := strings.TrimSpace(getEnv("OPLIST_ADDRESS"))
+	oplistToken := strings.TrimSpace(getEnv("OPLIST_TOKEN"))
+	oplistEnabled := oplistAddr != "" && oplistToken != ""
+
 	cfg := AppConfig{
 		Version: 1,
 		Ports: PortsConfig{
@@ -90,6 +114,7 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			Torcherino: 3000,
 			Cdnjs:      3001,
 			Git:        3002,
+			Sakuya:     3200,
 		},
 		Cdnjs: CdnjsConfig{
 			AssetURL:       strings.TrimSpace(defaultString(getEnv("ASSET_URL"), "https://cdn.jsdelivr.net")),
@@ -134,6 +159,15 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			WorkerSecretKey:       getEnv("WORKER_SECRET_KEY"),
 			WorkerSecretHeaders:   parseHeaderNamesCSV(getEnv("WORKER_SECRET_HEADERS")),
 			WorkerSecretHeaderMap: map[string]string{},
+		},
+		Sakuya: SakuyaConfig{
+			Disabled: !oplistEnabled,
+			Oplist: SakuyaOplist{
+				Address:   oplistAddr,
+				Token:     oplistToken,
+				PublicURL: strings.TrimSpace(getEnv("OPLIST_PUBLIC_URL")),
+			},
+			OneDrive: SakuyaOneDrive{},
 		},
 	}
 
@@ -216,6 +250,10 @@ func (c AppConfig) Validate() error {
 			return fmt.Errorf("%s must be 1-65535", p.name)
 		}
 	}
+	// Backward-compatibility: older configs won't have ports.sakuya yet.
+	if c.Ports.Sakuya != 0 && (c.Ports.Sakuya < 1 || c.Ports.Sakuya > 65535) {
+		return fmt.Errorf("%s must be 1-65535", "ports.sakuya")
+	}
 
 	// Prevent port conflicts among enabled services/instances.
 	usedPorts := map[int]string{
@@ -231,6 +269,10 @@ func (c AppConfig) Validate() error {
 		usedPorts[port] = name
 		return nil
 	}
+	sakuyaConfigured := strings.TrimSpace(c.Sakuya.Oplist.Address) != "" ||
+		strings.TrimSpace(c.Sakuya.Oplist.Token) != "" ||
+		strings.TrimSpace(c.Sakuya.Oplist.PublicURL) != ""
+	sakuyaEnabled := !c.Sakuya.Disabled && sakuyaConfigured
 	if !c.Torcherino.Disabled {
 		if err := addPort(c.Ports.Torcherino, "torcherino"); err != nil {
 			return err
@@ -243,6 +285,15 @@ func (c AppConfig) Validate() error {
 	}
 	if !c.Git.Disabled {
 		if err := addPort(c.Ports.Git, "git(default)"); err != nil {
+			return err
+		}
+	}
+	if sakuyaEnabled {
+		port := c.Ports.Sakuya
+		if port == 0 {
+			port = 3200
+		}
+		if err := addPort(port, "sakuya"); err != nil {
 			return err
 		}
 	}
@@ -290,6 +341,40 @@ func (c AppConfig) Validate() error {
 
 		if !inst.Git.Disabled && strings.TrimSpace(inst.Git.UpstreamPath) == "" {
 			return fmt.Errorf("gitInstances[%q].git.upstreamPath is required", id)
+		}
+	}
+
+	if sakuyaEnabled {
+		if strings.TrimSpace(c.Sakuya.Oplist.Token) == "" {
+			return errors.New("sakuya.oplist.token is required")
+		}
+
+		addr := strings.TrimSpace(c.Sakuya.Oplist.Address)
+		if addr == "" {
+			return errors.New("sakuya.oplist.address is required")
+		}
+		u, err := url.Parse(addr)
+		if err != nil {
+			return errors.New("sakuya.oplist.address is invalid")
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return errors.New("sakuya.oplist.address must start with http:// or https://")
+		}
+		if strings.TrimSpace(u.Host) == "" {
+			return errors.New("sakuya.oplist.address host is empty")
+		}
+
+		if strings.TrimSpace(c.Sakuya.Oplist.PublicURL) != "" {
+			pu, err := url.Parse(strings.TrimSpace(c.Sakuya.Oplist.PublicURL))
+			if err != nil {
+				return errors.New("sakuya.oplist.publicUrl is invalid")
+			}
+			if pu.Scheme != "http" && pu.Scheme != "https" {
+				return errors.New("sakuya.oplist.publicUrl must start with http:// or https://")
+			}
+			if strings.TrimSpace(pu.Host) == "" {
+				return errors.New("sakuya.oplist.publicUrl host is empty")
+			}
 		}
 	}
 	return nil
