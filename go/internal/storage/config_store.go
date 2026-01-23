@@ -31,6 +31,8 @@ func NewConfigStore(db *sql.DB, crypto *CryptoContext) *ConfigStore {
 }
 
 func (s *ConfigStore) IsEncryptionEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.crypto != nil && s.crypto.Enabled
 }
 

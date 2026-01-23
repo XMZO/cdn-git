@@ -71,6 +71,42 @@
     </div>
 
     <div class="card">
+      <h3>{{.T "system.masterKeyTitle"}}</h3>
+      <div class="muted small">{{.T "system.masterKeyHint"}}</div>
+      <form method="post" action="/system/master-key" class="form" style="margin-top:12px;">
+        <div class="grid cols-2">
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyCurrent"}}</label>
+            <input type="password" name="currentMasterKey" autocomplete="off" placeholder="{{.T "system.masterKeyCurrentPlaceholder"}}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyPassword"}}</label>
+            <input type="password" name="password" autocomplete="current-password" placeholder="{{.T "system.masterKeyPasswordPlaceholder"}}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyNew"}}</label>
+            <input type="password" name="newMasterKey" autocomplete="new-password" placeholder="{{.T "system.masterKeyNewPlaceholder"}}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>{{.T "system.masterKeyConfirm"}}</label>
+            <input type="password" name="confirmNewMasterKey" autocomplete="new-password" placeholder="{{.T "system.masterKeyConfirmPlaceholder"}}" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button
+            class="btn danger"
+            type="submit"
+            data-confirm-submit="{{.T "system.masterKeyConfirmTitle"}}"
+            data-confirm-detail="{{.T "system.masterKeyConfirmDetail"}}"
+            data-confirm-ok="{{.T "system.masterKeyConfirmOk"}}"
+          >
+            {{.T "system.masterKeyRotate"}}
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
       <h3>{{.T "system.servicesTitle"}}</h3>
       <div class="muted small">{{.T "system.servicesHint"}}</div>
 

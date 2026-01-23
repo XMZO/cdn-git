@@ -43,12 +43,12 @@ type Options struct {
 }
 
 type server struct {
-	db         *sql.DB
-	config     *storage.ConfigStore
-	port       int
-	sessionTTL int
-	startedAt  time.Time
-	metrics    *metrics.Registry
+	db             *sql.DB
+	config         *storage.ConfigStore
+	port           int
+	sessionTTL     int
+	startedAt      time.Time
+	metrics        *metrics.Registry
 	trafficPersist *traffic.Persister
 }
 
@@ -214,7 +214,7 @@ type systemData struct {
 
 type trafficData struct {
 	layoutData
-	Retention storage.TrafficRetention
+	Retention    storage.TrafficRetention
 	GitInstances []trafficGitInstanceOption
 }
 
@@ -288,12 +288,12 @@ func NewHandler(opts Options) (http.Handler, error) {
 	}
 
 	s := &server{
-		db:         opts.DB,
-		config:     opts.Config,
-		port:       opts.Port,
-		sessionTTL: opts.SessionTTL,
-		startedAt:  time.Now(),
-		metrics:    opts.Metrics,
+		db:             opts.DB,
+		config:         opts.Config,
+		port:           opts.Port,
+		sessionTTL:     opts.SessionTTL,
+		startedAt:      time.Now(),
+		metrics:        opts.Metrics,
 		trafficPersist: opts.Traffic,
 	}
 
@@ -315,6 +315,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/account/password", s.wrapRequireAuth(s.accountPassword))
 	mux.HandleFunc("/system", s.wrapRequireAuth(s.system))
 	mux.HandleFunc("/system/timezone", s.wrapRequireAuth(s.systemTimeZone))
+	mux.HandleFunc("/system/master-key", s.wrapRequireAuth(s.systemMasterKey))
 	mux.HandleFunc("/traffic", s.wrapRequireAuth(s.traffic))
 	mux.HandleFunc("/traffic/retention", s.wrapRequireAuth(s.trafficRetention))
 	mux.HandleFunc("/traffic/cleanup", s.wrapRequireAuth(s.trafficCleanup))
@@ -1043,12 +1044,37 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 	title := s.t(r, "page.system.title")
 
 	notice := ""
-	if r.Method == http.MethodGet && r.URL.Query().Get("ok") != "" {
-		notice = s.t(r, "common.saved")
+	if r.Method == http.MethodGet {
+		if ok := strings.TrimSpace(r.URL.Query().Get("ok")); ok != "" {
+			if ok == "masterKey" {
+				if strings.TrimSpace(r.URL.Query().Get("env")) == "1" {
+					notice = s.t(r, "system.masterKeyRotatedNoticeEnvUpdated")
+				} else {
+					notice = s.t(r, "system.masterKeyRotatedNotice")
+				}
+			} else {
+				notice = s.t(r, "common.saved")
+			}
+		}
 	}
 	errMsg := ""
-	if r.Method == http.MethodGet && r.URL.Query().Get("err") == "timezone" {
-		errMsg = s.t(r, "error.timeZoneInvalid")
+	if r.Method == http.MethodGet {
+		switch strings.TrimSpace(r.URL.Query().Get("err")) {
+		case "timezone":
+			errMsg = s.t(r, "error.timeZoneInvalid")
+		case "masterKeyCurrent":
+			errMsg = s.t(r, "error.masterKeyCurrentMismatch")
+		case "masterKeyPassword":
+			errMsg = s.t(r, "error.masterKeyPasswordInvalid")
+		case "masterKeyConfirm":
+			errMsg = s.t(r, "error.masterKeyConfirmMismatch")
+		case "masterKeyNew":
+			errMsg = s.t(r, "error.masterKeyNewInvalid")
+		case "masterKeyDecrypt":
+			errMsg = s.t(r, "error.masterKeyDecryptFailed")
+		case "masterKeyRotate":
+			errMsg = s.t(r, "error.masterKeyRotateFailed")
+		}
 	}
 
 	cfg, err := s.config.GetDecryptedConfig()
@@ -1159,6 +1185,71 @@ func (s *server) systemTimeZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/system?ok=1", http.StatusFound)
+}
+
+func (s *server) systemMasterKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	st := getState(r.Context())
+	if st == nil || st.User == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/system?err=masterKeyRotate", http.StatusFound)
+		return
+	}
+
+	currentMasterKey := strings.TrimSpace(r.FormValue("currentMasterKey"))
+	newMasterKey := strings.TrimSpace(r.FormValue("newMasterKey"))
+	confirmNewMasterKey := strings.TrimSpace(r.FormValue("confirmNewMasterKey"))
+	password := r.FormValue("password")
+
+	currentEnvKey := strings.TrimSpace(os.Getenv("HAZUKI_MASTER_KEY"))
+	if currentMasterKey != currentEnvKey {
+		http.Redirect(w, r, "/system?err=masterKeyCurrent", http.StatusFound)
+		return
+	}
+
+	_, ok, err := storage.VerifyUserPassword(s.db, st.User.Username, password)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	if !ok {
+		http.Redirect(w, r, "/system?err=masterKeyPassword", http.StatusFound)
+		return
+	}
+
+	if newMasterKey == "" || newMasterKey == currentEnvKey {
+		http.Redirect(w, r, "/system?err=masterKeyNew", http.StatusFound)
+		return
+	}
+	if newMasterKey != confirmNewMasterKey {
+		http.Redirect(w, r, "/system?err=masterKeyConfirm", http.StatusFound)
+		return
+	}
+
+	if err := s.config.RotateMasterKey(currentMasterKey, newMasterKey); err != nil {
+		if errors.Is(err, storage.ErrDecryptAuthFailed) || strings.Contains(strings.ToLower(err.Error()), "decrypt") {
+			http.Redirect(w, r, "/system?err=masterKeyDecrypt", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/system?err=masterKeyRotate", http.StatusFound)
+		return
+	}
+
+	_ = os.Setenv("HAZUKI_MASTER_KEY", newMasterKey)
+	envUpdated, _ := syncMasterKeyToDotEnv(newMasterKey)
+	if envUpdated {
+		http.Redirect(w, r, "/system?ok=masterKey&env=1", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/system?ok=masterKey&env=0", http.StatusFound)
 }
 
 func (s *server) traffic(w http.ResponseWriter, r *http.Request) {
