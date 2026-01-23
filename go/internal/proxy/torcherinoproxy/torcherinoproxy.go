@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hazuki-go/internal/model"
+	"hazuki-go/internal/proxy/upstreamhttp"
 )
 
 type RuntimeConfig struct {
@@ -55,12 +56,10 @@ func NewHandler(runtime RuntimeConfig) http.Handler {
 }
 
 func NewDynamicHandler(getRuntime func() RuntimeConfig) http.Handler {
-	client := &http.Client{
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		Timeout: 60 * time.Second,
-	}
+	client := upstreamhttp.NewClient(upstreamhttp.Options{
+		FollowRedirects: false,
+		Timeout:         60 * time.Second,
+	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		runtime := RuntimeConfig{}

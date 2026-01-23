@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 
 	"hazuki-go/internal/model"
+	"hazuki-go/internal/proxy/upstreamhttp"
 )
 
 type RuntimeConfig struct {
@@ -118,9 +120,12 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 }
 
 func NewDynamicHandler(getRuntime func() RuntimeConfig, getRedis func() *redis.Client) http.Handler {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := upstreamhttp.NewClient(upstreamhttp.Options{
+		FollowRedirects: true,
+		Timeout:         30 * time.Second,
+	})
+
+	var sf singleflight.Group
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		runtime := RuntimeConfig{}
@@ -131,11 +136,11 @@ func NewDynamicHandler(getRuntime func() RuntimeConfig, getRedis func() *redis.C
 		if getRedis != nil {
 			redisClient = getRedis()
 		}
-		handleRequest(w, r, runtime, redisClient, client)
+		handleRequest(w, r, runtime, redisClient, client, &sf)
 	})
 }
 
-func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, redisClient *redis.Client, client *http.Client) {
+func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, redisClient *redis.Client, client *http.Client, sf *singleflight.Group) {
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/health" {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			http.NotFound(w, r)
@@ -214,7 +219,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		}
 
 		cdnURL := runtime.AssetURL + "/gh/" + user + "/" + filePath
-		fetchWithCache(w, r, runtime, redisClient, client, cdnURL, path)
+		fetchWithCache(w, r, runtime, redisClient, client, sf, cdnURL, path)
 		return
 	}
 
@@ -240,7 +245,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	}
 
 	cdnURL := runtime.AssetURL + "/gh/" + runtime.DefaultUser + "/" + reqPath
-	fetchWithCache(w, r, runtime, redisClient, client, cdnURL, path)
+	fetchWithCache(w, r, runtime, redisClient, client, sf, cdnURL, path)
 }
 
 func parseGhPath(path string) (user, filePath string, ok bool) {
@@ -388,7 +393,7 @@ func extractExtension(requestPath string) string {
 	return strings.ToLower(base[dot+1:])
 }
 
-func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, redisClient *redis.Client, client *http.Client, cdnURL, reqPath string) {
+func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig, redisClient *redis.Client, client *http.Client, sf *singleflight.Group, cdnURL, reqPath string) {
 	ttlSeconds := getCacheTTLSeconds(reqPath, runtime.CacheTTLSeconds, runtime.DefaultTTLSeconds)
 
 	var cached []byte
@@ -403,6 +408,85 @@ func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfi
 	if cached != nil && strings.TrimSpace(cachedType) != "" {
 		writeBody(w, r, cached, cachedType, ttlSeconds, "HIT")
 		return
+	}
+
+	if sf != nil && redisClient != nil {
+		ch := sf.DoChan(cdnURL, func() (any, error) {
+			// Double-check cache in case another goroutine/process filled it.
+			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			body, _ := redisClient.Get(ctx, cdnURL).Bytes()
+			typ, _ := redisClient.Get(ctx, cdnURL+":type").Result()
+			cancel()
+
+			if body != nil && strings.TrimSpace(typ) != "" {
+				return struct {
+					Body []byte
+					Type string
+				}{Body: body, Type: typ}, nil
+			}
+
+			// Fetch and cache (leader only).
+			reqCtx := r.Context()
+			if ctx2 := context.WithoutCancel(reqCtx); ctx2 != nil {
+				reqCtx = ctx2
+			}
+
+			upReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, cdnURL, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			resp, err := client.Do(upReq)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode < 200 || resp.StatusCode > 299 {
+				return nil, errors.New("upstream non-2xx")
+			}
+
+			respBody, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+
+			ctx3, cancel3 := context.WithTimeout(context.Background(), 750*time.Millisecond)
+			ttl := time.Duration(ttlSeconds) * time.Second
+			pipe := redisClient.Pipeline()
+			pipe.SetEx(ctx3, cdnURL, respBody, ttl)
+			pipe.SetEx(ctx3, cdnURL+":type", contentType, ttl)
+			_, _ = pipe.Exec(ctx3)
+			cancel3()
+
+			return struct {
+				Body []byte
+				Type string
+			}{Body: respBody, Type: contentType}, nil
+		})
+
+		select {
+		case <-r.Context().Done():
+			return
+		case res := <-ch:
+			if res.Err == nil {
+				data := res.Val.(struct {
+					Body []byte
+					Type string
+				})
+				cacheStatus := "MISS"
+				if res.Shared {
+					cacheStatus = "HIT"
+				}
+				writeBody(w, r, data.Body, data.Type, ttlSeconds, cacheStatus)
+				return
+			}
+		}
 	}
 
 	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, cdnURL, nil)

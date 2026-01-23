@@ -150,6 +150,17 @@ func (w *countingResponseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+func (w *countingResponseWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		n, err := rf.ReadFrom(r)
+		w.n += n
+		return n, err
+	}
+	n, err := io.Copy(w.ResponseWriter, r)
+	w.n += n
+	return n, err
+}
+
 func (w *countingResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()

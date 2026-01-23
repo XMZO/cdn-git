@@ -8,6 +8,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.7.0
 	golang.org/x/crypto v0.47.0
+	golang.org/x/sync v0.17.0
 	modernc.org/sqlite v1.44.2
 )
 
