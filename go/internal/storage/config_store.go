@@ -215,10 +215,6 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 		s.mu.Unlock()
 		return err
 	}
-	if err := next.Validate(); err != nil {
-		s.mu.Unlock()
-		return err
-	}
 
 	if req.PreserveEmptySecrets {
 		clearSet := make(map[string]struct{})
@@ -273,6 +269,11 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 		if _, ok := clearSet["sakuya.oplist.token"]; !ok && next.Sakuya.Oplist.Token == "" {
 			next.Sakuya.Oplist.Token = current.Sakuya.Oplist.Token
 		}
+	}
+
+	if err := next.Validate(); err != nil {
+		s.mu.Unlock()
+		return err
 	}
 
 	encrypted, err := encryptConfigSecrets(next, s.crypto)
