@@ -17,7 +17,7 @@ import (
 	"math"
 	"strings"
 
-	"golang.org/x/crypto/scrypt"
+	"golang.org/x/crypto/argon2"
 
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/storage"
@@ -44,9 +44,9 @@ type Header struct {
 	KeyMode     KeyMode `json:"keyMode"`
 	KDF         string  `json:"kdf"`
 	KDFSaltB64  string  `json:"kdfSaltB64"`
-	KDFN        int     `json:"kdfN"`
-	KDFR        int     `json:"kdfR"`
-	KDFP        int     `json:"kdfP"`
+	KDFTime     int     `json:"kdfTime"`
+	KDFMemoryKB int     `json:"kdfMemoryKB"`
+	KDFThreads  int     `json:"kdfThreads"`
 	AEAD        string  `json:"aead"`
 	NoncePrefB4 string  `json:"noncePrefB4"`
 	Compression string  `json:"compression"`
@@ -92,7 +92,7 @@ func Export(ctx context.Context, db *sql.DB, w io.Writer, opts ExportOptions) er
 	var schemaVer int
 	_ = tx.QueryRowContext(ctx, "PRAGMA user_version;").Scan(&schemaVer)
 
-	kdfSalt := make([]byte, 16)
+	kdfSalt := make([]byte, 32)
 	if _, err := rand.Read(kdfSalt); err != nil {
 		return err
 	}
@@ -101,10 +101,7 @@ func Export(ctx context.Context, db *sql.DB, w io.Writer, opts ExportOptions) er
 		return err
 	}
 
-	key, err := scrypt.Key([]byte(opts.Secret), kdfSalt, 16384, 8, 1, 32)
-	if err != nil {
-		return err
-	}
+	key := argon2.IDKey([]byte(opts.Secret), kdfSalt, 3, 32*1024, 2, 32)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
@@ -120,11 +117,11 @@ func Export(ctx context.Context, db *sql.DB, w io.Writer, opts ExportOptions) er
 		CreatedAt:   strings.TrimSpace(opts.CreatedAt),
 		SchemaVer:   schemaVer,
 		KeyMode:     opts.KeyMode,
-		KDF:         "scrypt",
+		KDF:         "argon2id",
 		KDFSaltB64:  base64.StdEncoding.EncodeToString(kdfSalt),
-		KDFN:        16384,
-		KDFR:        8,
-		KDFP:        1,
+		KDFTime:     3,
+		KDFMemoryKB: 32 * 1024,
+		KDFThreads:  2,
 		AEAD:        "aes-256-gcm",
 		NoncePrefB4: base64.StdEncoding.EncodeToString(noncePref),
 		Compression: "gzip",
@@ -241,15 +238,15 @@ func Import(ctx context.Context, db *sql.DB, r io.Reader, opts ImportOptions) (H
 	if strings.TrimSpace(h.Magic) != fileMagic || h.Version != fileVersion {
 		return Header{}, errors.New("backup: invalid header")
 	}
-	if h.KDF != "scrypt" || h.AEAD != "aes-256-gcm" || h.Compression != "gzip" {
+	if h.KDF != "argon2id" || h.AEAD != "aes-256-gcm" || h.Compression != "gzip" {
 		return Header{}, errors.New("backup: unsupported params")
 	}
-	if h.KDFN <= 1 || h.KDFR <= 0 || h.KDFP <= 0 {
+	if h.KDFTime <= 0 || h.KDFTime > 10 || h.KDFMemoryKB <= 0 || h.KDFMemoryKB > 256*1024 || h.KDFThreads <= 0 || h.KDFThreads > 32 {
 		return Header{}, errors.New("backup: invalid kdf params")
 	}
 
 	kdfSalt, err := base64.StdEncoding.DecodeString(strings.TrimSpace(h.KDFSaltB64))
-	if err != nil || len(kdfSalt) < 8 {
+	if err != nil || len(kdfSalt) != 32 {
 		return Header{}, errors.New("backup: invalid kdf salt")
 	}
 	noncePref, err := base64.StdEncoding.DecodeString(strings.TrimSpace(h.NoncePrefB4))
@@ -270,10 +267,7 @@ func Import(ctx context.Context, db *sql.DB, r io.Reader, opts ImportOptions) (H
 		return Header{}, errors.New("backup: secret is required")
 	}
 
-	key, err := scrypt.Key([]byte(secret), kdfSalt, h.KDFN, h.KDFR, h.KDFP, 32)
-	if err != nil {
-		return Header{}, err
-	}
+	key := argon2.IDKey([]byte(secret), kdfSalt, uint32(h.KDFTime), uint32(h.KDFMemoryKB), uint8(h.KDFThreads), 32)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return Header{}, err

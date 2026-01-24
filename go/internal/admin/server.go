@@ -3946,6 +3946,12 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 }
 
 func isSecureRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
 	xfProto := r.Header.Get("X-Forwarded-Proto")
 	proto := strings.ToLower(strings.TrimSpace(strings.Split(xfProto, ",")[0]))
 	return proto == "https"
