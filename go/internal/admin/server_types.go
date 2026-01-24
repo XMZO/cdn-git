@@ -1,0 +1,287 @@
+package admin
+
+import (
+	"html/template"
+
+	"hazuki-go/internal/model"
+	"hazuki-go/internal/storage"
+)
+
+type reqState struct {
+	HasUsers bool
+	User     *storage.User
+}
+
+type ctxKey string
+
+const stateKey ctxKey = "hazuki_admin_state"
+
+type layoutData struct {
+	Title        string
+	BodyTemplate string
+	User         *storage.User
+	HasUsers     bool
+	Notice       string
+	Error        string
+
+	Lang   string
+	JSI18n template.JS
+
+	// Admin panel display timezone. Values: auto | UTC | +HH:MM / -HH:MM
+	TimeZone string
+}
+
+type dashboardData struct {
+	layoutData
+	UpdatedAt string
+	Ports     model.PortsConfig
+	AdminURL  string
+
+	TorcherinoURL       string
+	TorcherinoHealthURL string
+	TorcherinoStatus    serviceStatus
+
+	CdnjsURL       string
+	CdnjsHealthURL string
+	CdnjsStatus    serviceStatus
+
+	GitURL       string
+	GitHealthURL string
+	GitStatus    serviceStatus
+	GitInstances []gitInstanceRow
+
+	SakuyaURL       string
+	SakuyaHealthURL string
+	SakuyaStatus    serviceStatus
+
+	CdnjsRedis redisStatus
+
+	Warnings []string
+}
+
+type cdnjsData struct {
+	layoutData
+	Cdnjs             model.CdnjsConfig
+	CdnjsPort         int
+	CdnjsPortValue    string
+	GhUserPolicyValue string
+	AllowedUsersCsv   string
+	BlockedUsersCsv   string
+	RedisPortValue    string
+	DefaultTTLValue   string
+	TTLOverridesValue string
+	TTLEffectiveJSON  template.JS
+	CdnjsBaseURL      string
+	CdnjsHealthURL    string
+
+	RedisStatus redisStatus
+	CdnjsStatus serviceStatus
+}
+
+type gitData struct {
+	layoutData
+	Git               model.GitConfig
+	GitPort           int
+	GitPortValue      string
+	GitPortKey        string
+	GitEnabled        bool
+	TokenIsSet        bool
+	AuthScheme        string
+	BlockedRegionsCsv string
+	BlockedIPsCsv     string
+	ReplaceDictJson   string
+	GitBaseURL        string
+	GitHealthURL      string
+	GitStatus         serviceStatus
+
+	CurrentInstanceID   string
+	CurrentInstanceName string
+	Instances           []gitInstanceRow
+}
+
+type gitInstanceRow struct {
+	ID        string
+	Name      string
+	Port      int
+	Enabled   bool
+	BaseURL   string
+	HealthURL string
+	Status    serviceStatus
+}
+
+type torcherinoData struct {
+	layoutData
+	Torcherino model.TorcherinoConfig
+
+	TorcherinoPort      int
+	TorcherinoPortValue string
+
+	DefaultTargetValue string
+	HostMappingJSON    string
+
+	SecretIsSet                    bool
+	WorkerSecretKeyValue           string
+	WorkerSecretHeadersCsvValue    string
+	WorkerSecretHeaderMapJSONValue string
+
+	TorcherinoBaseURL   string
+	TorcherinoHealthURL string
+	TorcherinoStatus    serviceStatus
+}
+
+type sakuyaOplistData struct {
+	layoutData
+	Sakuya model.SakuyaConfig
+
+	SakuyaPort      int
+	SakuyaPortValue string
+
+	OplistAddressValue   string
+	OplistPublicURLValue string
+
+	TokenIsSet bool
+	TokenValue string
+
+	SakuyaBaseURL   string
+	SakuyaHealthURL string
+	SakuyaStatus    serviceStatus
+}
+
+type accountData struct {
+	layoutData
+}
+
+type versionsData struct {
+	layoutData
+	Versions []storage.ConfigVersion
+}
+
+type exportData struct {
+	layoutData
+	MasterKeyIsSet bool
+}
+
+type importData struct {
+	layoutData
+}
+
+type systemData struct {
+	layoutData
+
+	GoVersion         string
+	BuildVersion      string
+	Uptime            string
+	StartedAt         string
+	Now               string
+	SessionTTLSeconds int
+	EncryptionEnabled bool
+	ConfigUpdatedAt   string
+
+	DBPath        string
+	DBSize        string
+	UsersCount    int
+	VersionsCount int64
+	SessionsCount int64
+
+	Ports model.PortsConfig
+
+	AdminStatus        serviceStatus
+	TorcherinoStatus   serviceStatus
+	CdnjsStatus        serviceStatus
+	GitStatus          serviceStatus
+	SakuyaOplistStatus serviceStatus
+
+	Redis redisStatus
+}
+
+type redisCacheEntry struct {
+	ID         string
+	URL        string
+	Type       string
+	SizeBytes  int64
+	SizeHuman  string
+	UpdatedAt  string
+	TTLSeconds int64
+}
+
+type redisCacheData struct {
+	layoutData
+
+	Redis redisStatus
+
+	MarkerKey     string
+	MarkerValue   string
+	MarkerPresent bool
+
+	IndexKey      string
+	TrackedCount  int64
+	Page          int
+	Limit         int
+	Entries       []redisCacheEntry
+	HasPrev       bool
+	HasNext       bool
+	PrevPage      int
+	NextPage      int
+	ClearableDesc string
+}
+
+type trafficData struct {
+	layoutData
+	Retention    storage.TrafficRetention
+	GitInstances []trafficGitInstanceOption
+}
+
+type trafficGitInstanceOption struct {
+	ID    string
+	Name  string
+	Value string // "git:<id>"
+}
+
+type wizardData struct {
+	layoutData
+
+	TokenIsSet  bool
+	SecretIsSet bool
+
+	TorcherinoDefaultTarget         string
+	TorcherinoHostMappingJSON       string
+	TorcherinoWorkerSecretKey       string
+	TorcherinoWorkerSecretHeaders   string
+	TorcherinoWorkerSecretHeaderMap string
+
+	CdnjsDefaultGhUser  string
+	CdnjsAllowedGhUsers string
+	CdnjsGhUserPolicy   string
+	CdnjsBlockedGhUsers string
+	CdnjsAssetURL       string
+	CdnjsRedisHost      string
+	CdnjsRedisPort      string
+
+	GitUpstreamPath string
+	GitGithubToken  string
+}
+
+type redisStatus struct {
+	Addr      string `json:"addr"`
+	Status    string `json:"status"` // ok | error | disabled
+	LatencyMS int64  `json:"latencyMS"`
+	Error     string `json:"error,omitempty"`
+
+	ServerVersion    string `json:"serverVersion,omitempty"`
+	UptimeSeconds    int64  `json:"uptimeSeconds,omitempty"`
+	ConnectedClients int64  `json:"connectedClients,omitempty"`
+	UsedMemoryHuman  string `json:"usedMemoryHuman,omitempty"`
+	DBSize           int64  `json:"dbSize,omitempty"`
+
+	KeyspaceHits   int64 `json:"keyspaceHits,omitempty"`
+	KeyspaceMisses int64 `json:"keyspaceMisses,omitempty"`
+}
+
+type serviceStatus struct {
+	Addr      string
+	URL       string
+	Service   string
+	Status    string // ok | error | disabled
+	LatencyMS int64
+	Error     string
+}
