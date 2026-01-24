@@ -15,8 +15,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"hazuki-go/internal/model"
 )
 
@@ -82,6 +84,14 @@ type Handler struct {
 	downloadClient *http.Client
 
 	maxRedirects int
+
+	linkTimeout  time.Duration
+	linkRetries  int
+	linkCacheTTL time.Duration
+
+	linkMu    sync.Mutex
+	linkCache map[string]cachedLink
+	linkGroup singleflight.Group
 }
 
 type HandlerOptions struct {
@@ -92,6 +102,11 @@ type HandlerOptions struct {
 	DownloadClient *http.Client
 
 	MaxRedirects int
+
+	// Optional. When empty/zero, sensible defaults are used.
+	LinkTimeout  time.Duration
+	LinkRetries  int
+	LinkCacheTTL time.Duration
 }
 
 func NewHandler(opts HandlerOptions) *Handler {
@@ -105,6 +120,11 @@ func NewHandler(opts HandlerOptions) *Handler {
 		apiClient:      defaultAPIClient(opts.APIClient),
 		downloadClient: defaultDownloadClient(opts.DownloadClient),
 		maxRedirects:   defaultInt(opts.MaxRedirects, 10),
+
+		linkTimeout:  defaultDuration(opts.LinkTimeout, 15*time.Second),
+		linkRetries:  defaultInt(opts.LinkRetries, 1),
+		linkCacheTTL: defaultDuration(opts.LinkCacheTTL, 10*time.Second),
+		linkCache:    map[string]cachedLink{},
 	}
 }
 
@@ -169,7 +189,7 @@ func (h *Handler) serveHTTP(w http.ResponseWriter, r *http.Request, runtime Runt
 		return
 	}
 
-	link, err := h.fetchLink(r.Context(), runtime, decodedPath)
+	link, err := h.fetchLinkCached(r.Context(), runtime, decodedPath)
 	if err != nil {
 		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": err.Error()})
 		return
@@ -266,8 +286,78 @@ type linkResponse struct {
 	} `json:"data"`
 }
 
-func (h *Handler) fetchLink(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+type cachedLink struct {
+	link      linkResponse
+	expiresAt time.Time
+}
+
+func (h *Handler) fetchLinkCached(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
+	cacheKey := runtime.OplistAddress + "|" + path
+	now := time.Now()
+
+	if cached, ok := h.getCachedLink(cacheKey, now); ok {
+		return cached, nil
+	}
+
+	val, err, _ := h.linkGroup.Do(cacheKey, func() (any, error) {
+		now := time.Now()
+		if cached, ok := h.getCachedLink(cacheKey, now); ok {
+			return cached, nil
+		}
+
+		link, err := h.fetchLinkWithRetries(ctx, runtime, path)
+		if err != nil {
+			return linkResponse{}, err
+		}
+		if h.linkCacheTTL > 0 && link.Code == 200 && strings.TrimSpace(link.Data.URL) != "" {
+			h.setCachedLink(cacheKey, link, now.Add(h.linkCacheTTL))
+		}
+		return link, nil
+	})
+	if err != nil {
+		return linkResponse{}, err
+	}
+	link, _ := val.(linkResponse)
+	return link, nil
+}
+
+func (h *Handler) fetchLinkWithRetries(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
+	attempts := 1
+	if h.linkRetries > 0 {
+		attempts += h.linkRetries
+	}
+
+	var last linkResponse
+	for i := 0; i < attempts; i++ {
+		link, err := h.fetchLinkOnce(ctx, runtime, path)
+		if err != nil {
+			return linkResponse{}, err
+		}
+		last = link
+
+		if link.Code == 200 || i == attempts-1 || !isRetryableLinkError(link) {
+			return link, nil
+		}
+
+		// Small backoff (keep it short for streaming players).
+		backoff := time.Duration(150*(i+1)) * time.Millisecond
+		t := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return last, ctx.Err()
+		case <-t.C:
+		}
+	}
+	return last, nil
+}
+
+func (h *Handler) fetchLinkOnce(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
+	timeout := h.linkTimeout
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	payload := struct {
@@ -302,6 +392,59 @@ func (h *Handler) fetchLink(ctx context.Context, runtime RuntimeConfig, path str
 		return linkResponse{}, err
 	}
 	return out, nil
+}
+
+func (h *Handler) getCachedLink(key string, now time.Time) (linkResponse, bool) {
+	if h == nil || h.linkCacheTTL <= 0 {
+		return linkResponse{}, false
+	}
+
+	h.linkMu.Lock()
+	defer h.linkMu.Unlock()
+
+	it, ok := h.linkCache[key]
+	if !ok {
+		return linkResponse{}, false
+	}
+	if now.After(it.expiresAt) {
+		delete(h.linkCache, key)
+		return linkResponse{}, false
+	}
+	return it.link, true
+}
+
+func (h *Handler) setCachedLink(key string, link linkResponse, expiresAt time.Time) {
+	if h == nil || h.linkCacheTTL <= 0 {
+		return
+	}
+
+	h.linkMu.Lock()
+	defer h.linkMu.Unlock()
+
+	if len(h.linkCache) > 4096 {
+		for k, v := range h.linkCache {
+			if time.Now().After(v.expiresAt) {
+				delete(h.linkCache, k)
+			}
+		}
+	}
+
+	h.linkCache[key] = cachedLink{link: link, expiresAt: expiresAt}
+}
+
+func isRetryableLinkError(link linkResponse) bool {
+	if link.Code < 500 {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(link.Message))
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "context canceled") ||
+		strings.Contains(msg, "context cancelled") ||
+		strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "timed out") ||
+		strings.Contains(msg, "temporary")
 }
 
 func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, originalReq *http.Request, w http.ResponseWriter, depth int) (*http.Response, error) {
@@ -582,15 +725,19 @@ func defaultInt(v int, fallback int) int {
 	return v
 }
 
+func defaultDuration(v time.Duration, fallback time.Duration) time.Duration {
+	if v <= 0 {
+		return fallback
+	}
+	return v
+}
+
 func defaultAPIClient(custom *http.Client) *http.Client {
 	if custom != nil {
 		return custom
 	}
 	tr := defaultTransport()
-	return &http.Client{
-		Transport: tr,
-		Timeout:   10 * time.Second,
-	}
+	return &http.Client{Transport: tr}
 }
 
 func defaultDownloadClient(custom *http.Client) *http.Client {
