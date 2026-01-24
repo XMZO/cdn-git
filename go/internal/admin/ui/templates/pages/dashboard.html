@@ -15,7 +15,7 @@
       </div>
     </div>
 
-    <div class="grid cols-3">
+    <div class="grid cols-2">
       <div class="card">
         <h3>Torcherino</h3>
         <div class="muted small">{{.T "common.port"}}：<code>{{.Ports.Torcherino}}</code></div>
@@ -92,6 +92,25 @@
           <a class="btn" href="/config/git">{{.T "common.configure"}}</a>
           <a class="btn" href="{{.GitURL}}" target="_blank" rel="noreferrer">{{.T "common.open"}}</a>
           <a class="btn" href="{{.GitHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.health"}}</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>{{.T "nav.sakuya"}}</h3>
+        <div class="muted small">{{.T "common.port"}}：<code>{{.Ports.Sakuya}}</code></div>
+        <div class="muted small" style="margin-top:8px;">{{.T "common.address"}}：<code>{{.SakuyaURL}}</code></div>
+        {{if .SakuyaStatus.Status}}
+          <div style="margin-top:8px;">
+            {{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}
+            {{if and (eq .SakuyaStatus.Status "error") .SakuyaStatus.Error}}
+              <span class="muted small" style="margin-left:8px;">{{.SakuyaStatus.Error}}</span>
+            {{end}}
+          </div>
+        {{end}}
+        <div class="btn-row">
+          <a class="btn" href="/config/sakuya/oplist">{{.T "common.configure"}}</a>
+          <a class="btn" href="{{.SakuyaURL}}" target="_blank" rel="noreferrer">{{.T "common.open"}}</a>
+          <a class="btn" href="{{.SakuyaHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.health"}}</a>
         </div>
       </div>
     </div>

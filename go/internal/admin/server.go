@@ -95,6 +95,10 @@ type dashboardData struct {
 	GitStatus    serviceStatus
 	GitInstances []gitInstanceRow
 
+	SakuyaURL       string
+	SakuyaHealthURL string
+	SakuyaStatus    serviceStatus
+
 	CdnjsRedis redisStatus
 
 	Warnings []string
@@ -988,6 +992,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	torcherinoURL := baseURLForPort(r, cfg.Ports.Torcherino)
 	cdnjsURL := baseURLForPort(r, cfg.Ports.Cdnjs)
 	gitURL := baseURLForPort(r, cfg.Ports.Git)
+	sakuyaURL := baseURLForPort(r, cfg.Ports.Sakuya)
 
 	gitInstances := []gitInstanceRow{}
 	if len(cfg.GitInstances) > 0 {
@@ -1062,6 +1067,18 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 			return checkServiceStatus(r.Context(), cfg.Ports.Git)
 		}(),
 		GitInstances: gitInstances,
+
+		SakuyaURL:       sakuyaURL,
+		SakuyaHealthURL: "/_hazuki/health/sakuya",
+		SakuyaStatus: func() serviceStatus {
+			if cfg.Sakuya.Disabled ||
+				cfg.Sakuya.Oplist.Disabled ||
+				strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" ||
+				strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
+				return disabledServiceStatus(cfg.Ports.Sakuya)
+			}
+			return checkServiceStatus(r.Context(), cfg.Ports.Sakuya)
+		}(),
 
 		CdnjsRedis: redisSt,
 		Warnings:   warnings,

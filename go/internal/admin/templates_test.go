@@ -37,6 +37,9 @@ func TestTemplatesRender(t *testing.T) {
 				CdnjsHealthURL:      "http://127.0.0.1:3001/_hazuki/health",
 				GitURL:              "http://127.0.0.1:3002",
 				GitHealthURL:        "http://127.0.0.1:3002/_hazuki/health",
+				SakuyaURL:           "http://127.0.0.1:3200",
+				SakuyaHealthURL:     "http://127.0.0.1:3200/_hazuki/health",
+				SakuyaStatus:        serviceStatus{Status: "disabled"},
 			},
 		},
 		{
