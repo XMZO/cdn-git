@@ -126,6 +126,59 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 	return nil
 }
 
+func (s *ConfigStore) ReloadFromDB(crypto *CryptoContext) error {
+	if s == nil || s.db == nil {
+		return errors.New("ConfigStore is nil")
+	}
+
+	row := s.db.QueryRow("SELECT config_json, updated_at FROM config_current WHERE id = ?", configRowID)
+
+	var configJSON string
+	var updatedAt string
+	if err := row.Scan(&configJSON, &updatedAt); err != nil {
+		return err
+	}
+	if strings.TrimSpace(configJSON) == "" {
+		return errors.New("config_current is empty")
+	}
+
+	var encrypted model.AppConfig
+	if err := json.Unmarshal([]byte(configJSON), &encrypted); err != nil {
+		return err
+	}
+
+	useCrypto := crypto
+	if useCrypto == nil {
+		useCrypto = s.crypto
+	}
+	decrypted, err := decryptConfigSecrets(encrypted, useCrypto)
+	if err != nil {
+		return err
+	}
+	if err := decrypted.Validate(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.crypto = useCrypto
+	s.encrypted = encrypted
+	s.decrypted = decrypted
+	s.updatedAt = updatedAt
+	s.inited = true
+	listeners := append([]func(model.AppConfig){}, s.onChanged...)
+	decryptedClone, _ := cloneConfig(decrypted)
+	s.mu.Unlock()
+
+	for _, cb := range listeners {
+		if cb == nil {
+			continue
+		}
+		cb(decryptedClone)
+	}
+
+	return nil
+}
+
 func (s *ConfigStore) GetUpdatedAt() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

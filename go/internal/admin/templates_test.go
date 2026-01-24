@@ -147,7 +147,6 @@ func TestTemplatesRender(t *testing.T) {
 			name: "import",
 			data: importData{
 				layoutData: layoutData{Title: "导入备份", BodyTemplate: "import", User: adminUser, HasUsers: true},
-				ConfigJSON: "{}",
 			},
 		},
 		{

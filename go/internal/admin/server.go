@@ -203,7 +203,6 @@ type versionsData struct {
 
 type importData struct {
 	layoutData
-	ConfigJSON string
 }
 
 type systemData struct {
@@ -2563,14 +2562,6 @@ func (s *server) configVersions(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("ok") != "" {
 		notice = s.t(r, "common.applied")
 	}
-	if r.URL.Query().Get("warn") == "secretsCleared" {
-		msg := s.t(r, "import.noticeSecretsCleared")
-		if notice != "" {
-			notice = notice + " " + msg
-		} else {
-			notice = msg
-		}
-	}
 	s.render(w, r, versionsData{
 		layoutData: layoutData{
 			Title:        title,
@@ -2625,43 +2616,52 @@ func (s *server) configVersionsSub(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		// continue
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	encrypted, err := s.config.GetEncryptedConfig()
-	if err != nil {
-		http.Error(w, "Bad gateway", http.StatusBadGateway)
-		return
-	}
-
-	kdfSaltB64, err := storage.GetKdfSaltB64(s.db)
-	if err != nil {
-		http.Error(w, "Bad gateway", http.StatusBadGateway)
 		return
 	}
 
 	ts := time.Now().UTC().Format("20060102-150405Z")
-	filename := fmt.Sprintf("hazuki-config-%s.json", ts)
+	filename := fmt.Sprintf("hazuki-backup-%s.db", ts)
 
-	w.Header().Set("content-type", "application/json; charset=utf-8")
+	tmp, err := os.CreateTemp("", "hazuki-backup-*.db")
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	_ = os.Remove(tmpPath) // VACUUM INTO expects the destination to not exist.
+
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	vacuumCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	stmt := "VACUUM INTO " + sqliteQuote(tmpPath) + ";"
+	if _, err := s.db.ExecContext(vacuumCtx, stmt); err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		http.Error(w, "Bad gateway", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	w.Header().Set("content-type", "application/x-sqlite3")
+	w.Header().Set("cache-control", "no-store")
 	w.Header().Set(
 		"content-disposition",
 		fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", filename, url.PathEscape(filename)),
 	)
-	payload := struct {
-		model.AppConfig
-		KdfSaltB64 string `json:"kdfSaltB64,omitempty"`
-	}{
-		AppConfig:  encrypted,
-		KdfSaltB64: kdfSaltB64,
-	}
-	enc, _ := json.MarshalIndent(payload, "", "  ")
-	w.WriteHeader(http.StatusOK)
-	if r.Method == http.MethodHead {
-		return
-	}
-	_, _ = w.Write(enc)
+
+	http.ServeContent(w, r, filename, time.Now(), f)
 }
 
 func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
@@ -2685,7 +2685,9 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
+	const maxUploadBytes = 512 << 20 // 512MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
 				Title:        title,
@@ -2698,44 +2700,7 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw := r.FormValue("configJson")
-	allowClearSecrets := strings.TrimSpace(r.FormValue("clearSecretsOnFail")) != ""
-
-	type importPayload struct {
-		model.AppConfig
-		KdfSaltB64 string `json:"kdfSaltB64,omitempty"`
-	}
-
-	var payload importPayload
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        fmt.Sprintf("%s: %s", s.t(r, "error.jsonInvalid"), err.Error()),
-			},
-			ConfigJSON: raw,
-		})
-		return
-	}
-	parsed := payload.AppConfig
-	if err := parsed.Validate(); err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        fmt.Sprintf("%s: %s", s.t(r, "error.configInvalid"), err.Error()),
-			},
-			ConfigJSON: raw,
-		})
-		return
-	}
-
-	parsed2, clearedSecrets, err := normalizeImportedSecrets(parsed, payload.KdfSaltB64, allowClearSecrets, s.db)
+	file, _, err := r.FormFile("dbFile")
 	if err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
@@ -2743,21 +2708,56 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 				BodyTemplate: "import",
 				User:         st.User,
 				HasUsers:     st.HasUsers,
-				Error:        s.errText(r, err),
+				Error:        s.t(r, "error.badRequest"),
 			},
-			ConfigJSON: raw,
+		})
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	tmp, err := os.CreateTemp("", "hazuki-import-*.db")
+	if err != nil {
+		s.render(w, r, importData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "import",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.t(r, "error.failedSave"),
+			},
+		})
+		return
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := io.Copy(tmp, file); err != nil {
+		_ = tmp.Close()
+		s.render(w, r, importData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "import",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.t(r, "error.failedSave"),
+			},
+		})
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		s.render(w, r, importData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "import",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.t(r, "error.failedSave"),
+			},
 		})
 		return
 	}
 
-	userID := st.User.ID
-	if err := s.config.Update(storage.UpdateRequest{
-		UserID: &userID,
-		Note:   "import",
-		Updater: func(_ model.AppConfig) (model.AppConfig, error) {
-			return parsed2, nil
-		},
-	}); err != nil {
+	if err := s.importSQLiteBackup(r.Context(), tmpPath); err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
 				Title:        title,
@@ -2766,16 +2766,345 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 				HasUsers:     st.HasUsers,
 				Error:        s.errText(r, err),
 			},
-			ConfigJSON: raw,
 		})
 		return
 	}
 
-	redirectTo := "/config/versions?ok=1"
-	if len(clearedSecrets) > 0 {
-		redirectTo += "&warn=secretsCleared"
+	http.Redirect(w, r, "/config/versions?ok=1", http.StatusFound)
+}
+
+func sqliteQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func hasSQLiteTable(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	if db == nil {
+		return false, errors.New("db is nil")
 	}
-	http.Redirect(w, r, redirectTo, http.StatusFound)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false, errors.New("table name is empty")
+	}
+
+	var found string
+	err := db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name = ?;", name).Scan(&found)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *server) importSQLiteBackup(ctx context.Context, backupPath string) error {
+	backupPath = strings.TrimSpace(backupPath)
+	if backupPath == "" {
+		return errI18n("error.importDbInvalid")
+	}
+
+	backupDB, err := storage.OpenDB(backupPath)
+	if err != nil {
+		return errI18n("error.importDbInvalid")
+	}
+	defer func() { _ = backupDB.Close() }()
+
+	required := []string{"meta", "users", "sessions", "config_current", "config_versions"}
+	for _, tbl := range required {
+		ok, err := hasSQLiteTable(ctx, backupDB, tbl)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errI18n("error.importDbInvalid")
+		}
+	}
+
+	var usersCount int64
+	if err := backupDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users;").Scan(&usersCount); err != nil {
+		return err
+	}
+	if usersCount <= 0 {
+		return errI18n("error.importDbNoUsers")
+	}
+
+	var currentCount int64
+	if err := backupDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM config_current WHERE id = 1;").Scan(&currentCount); err != nil {
+		return err
+	}
+	if currentCount != 1 {
+		return errI18n("error.importDbInvalid")
+	}
+
+	// Pre-verify: ensure the backup can be loaded and decrypted with the current master key,
+	// so we don't replace the running DB with an unusable config.
+	{
+		masterKey := os.Getenv("HAZUKI_MASTER_KEY")
+		backupCrypto, err := storage.NewCryptoContext(backupDB, masterKey)
+		if err != nil {
+			return err
+		}
+		tmpStore := storage.NewConfigStore(backupDB, backupCrypto)
+		if err := tmpStore.InitFromEnvironment(func(string) string { return "" }, func(string) (string, bool) { return "", false }); err != nil {
+			return err
+		}
+	}
+
+	hasTrafficTotals, err := hasSQLiteTable(ctx, backupDB, "traffic_totals")
+	if err != nil {
+		return err
+	}
+	hasTrafficBuckets, err := hasSQLiteTable(ctx, backupDB, "traffic_buckets")
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Delete in dependency-safe order.
+	deleteOrder := []string{
+		"sessions",
+		"config_versions",
+		"config_current",
+		"traffic_buckets",
+		"traffic_totals",
+		"users",
+		"meta",
+	}
+	for _, tbl := range deleteOrder {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+tbl+";"); err != nil {
+			return err
+		}
+	}
+
+	// meta
+	{
+		rows, err := backupDB.QueryContext(ctx, "SELECT key, value FROM meta;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO meta (key, value) VALUES (?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var key, value string
+			if err := rows.Scan(&key, &value); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, key, value); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	// users
+	{
+		rows, err := backupDB.QueryContext(ctx, "SELECT id, username, password_hash, created_at, updated_at FROM users;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var id int64
+			var username, passwordHash, createdAt, updatedAt string
+			if err := rows.Scan(&id, &username, &passwordHash, &createdAt, &updatedAt); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, id, username, passwordHash, createdAt, updatedAt); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	// config_current
+	{
+		rows, err := backupDB.QueryContext(ctx, "SELECT id, config_json, updated_at, updated_by FROM config_current;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO config_current (id, config_json, updated_at, updated_by) VALUES (?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var id int64
+			var configJSON string
+			var updatedAt string
+			var updatedBy sql.NullInt64
+			if err := rows.Scan(&id, &configJSON, &updatedAt, &updatedBy); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, id, configJSON, updatedAt, updatedBy); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	// config_versions
+	{
+		rows, err := backupDB.QueryContext(ctx, "SELECT id, config_json, created_at, created_by, note FROM config_versions;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO config_versions (id, config_json, created_at, created_by, note) VALUES (?, ?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var id int64
+			var configJSON, createdAt string
+			var createdBy sql.NullInt64
+			var note sql.NullString
+			if err := rows.Scan(&id, &configJSON, &createdAt, &createdBy, &note); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, id, configJSON, createdAt, createdBy, note); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	// sessions
+	{
+		rows, err := backupDB.QueryContext(ctx, "SELECT token_hash, user_id, created_at, expires_at FROM sessions;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var tokenHash string
+			var userID int64
+			var createdAt, expiresAt string
+			if err := rows.Scan(&tokenHash, &userID, &createdAt, &expiresAt); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, tokenHash, userID, createdAt, expiresAt); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	if hasTrafficTotals {
+		rows, err := backupDB.QueryContext(ctx, "SELECT service, bytes_in, bytes_out, requests, updated_at FROM traffic_totals;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO traffic_totals (service, bytes_in, bytes_out, requests, updated_at) VALUES (?, ?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var service string
+			var bytesIn, bytesOut, requests int64
+			var updatedAt string
+			if err := rows.Scan(&service, &bytesIn, &bytesOut, &requests, &updatedAt); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, service, bytesIn, bytesOut, requests, updatedAt); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	if hasTrafficBuckets {
+		rows, err := backupDB.QueryContext(ctx, "SELECT kind, start_ts, service, bytes_in, bytes_out, requests, updated_at FROM traffic_buckets;")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO traffic_buckets (kind, start_ts, service, bytes_in, bytes_out, requests, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for rows.Next() {
+			var kind, service, updatedAt string
+			var startTS int64
+			var bytesIn, bytesOut, requests int64
+			if err := rows.Scan(&kind, &startTS, &service, &bytesIn, &bytesOut, &requests, &updatedAt); err != nil {
+				return err
+			}
+			if _, err := stmt.ExecContext(ctx, kind, startTS, service, bytesIn, bytesOut, requests, updatedAt); err != nil {
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	masterKey := os.Getenv("HAZUKI_MASTER_KEY")
+	nextCrypto, err := storage.NewCryptoContext(s.db, masterKey)
+	if err != nil {
+		return err
+	}
+	if err := s.config.ReloadFromDB(nextCrypto); err != nil {
+		return err
+	}
+	if s.trafficPersist != nil {
+		_ = s.trafficPersist.Init(ctx)
+		s.trafficPersist.ResetBaseline()
+	}
+	return nil
 }
 
 func normalizeImportedSecrets(cfg model.AppConfig, backupKdfSaltB64 string, allowClear bool, db *sql.DB) (model.AppConfig, []string, error) {
