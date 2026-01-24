@@ -35,7 +35,7 @@
     <a href="/config/import" class="{{if eq .BodyTemplate "import"}}active{{end}}">
       <span>{{.T "nav.import"}}</span>
     </a>
-    <a href="/config/export" data-confirm-download="{{.T "backup.confirmTitle"}}" data-confirm-detail="{{.T "backup.confirmDetail"}}">
+    <a href="/config/export" class="{{if eq .BodyTemplate "export"}}active{{end}}">
       <span>{{.T "nav.export"}}</span>
     </a>
 

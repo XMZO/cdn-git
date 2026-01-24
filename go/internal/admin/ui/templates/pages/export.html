@@ -1,0 +1,46 @@
+{{define "export"}}
+  <div class="grid">
+    <div class="card">
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "export.subtitle"}}</div>
+    </div>
+
+    <form class="form" method="post" action="/config/export">
+      <div class="card">
+        <div class="field">
+          <label>{{.T "export.keyModeLabel"}}</label>
+          <div class="hint">{{.T "export.keyModeHint"}}</div>
+          <div class="hz-check-row" style="margin-top:10px;">
+            <input id="hz-export-master" type="radio" name="keyMode" value="master" {{if .MasterKeyIsSet}}checked{{end}} />
+            <label for="hz-export-master" class="hz-check-label">{{.T "export.keyModeMaster"}}</label>
+          </div>
+          {{if not .MasterKeyIsSet}}
+            <div class="hint" style="margin-top:6px;">{{.T "export.masterKeyMissing"}}</div>
+          {{end}}
+
+          <div class="hz-check-row" style="margin-top:10px;">
+            <input id="hz-export-pass" type="radio" name="keyMode" value="password" {{if not .MasterKeyIsSet}}checked{{end}} />
+            <label for="hz-export-pass" class="hz-check-label">{{.T "export.keyModePassword"}}</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>{{.T "export.passwordLabel"}}</label>
+          <input type="password" name="password" value="" placeholder="{{.T "export.passwordPlaceholder"}}" />
+          <div class="hint">{{.T "export.passwordHint"}}</div>
+        </div>
+
+        <div class="field">
+          <label>{{.T "export.passwordConfirmLabel"}}</label>
+          <input type="password" name="password2" value="" placeholder="{{.T "export.passwordConfirmPlaceholder"}}" />
+        </div>
+
+        <div class="btn-row">
+          <button class="btn primary" type="submit" onclick="return confirm({{printf "%q" (.T "export.confirm")}});">{{.T "export.download"}}</button>
+          <a class="btn" href="/config/versions">{{.T "export.backToVersions"}}</a>
+        </div>
+      </div>
+    </form>
+  </div>
+{{end}}
+

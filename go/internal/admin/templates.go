@@ -25,6 +25,7 @@ var bodyTemplateAllowList = map[string]struct{}{
 	"git":           {},
 	"sakuya_oplist": {},
 	"versions":      {},
+	"export":        {},
 	"import":        {},
 	"account":       {},
 }

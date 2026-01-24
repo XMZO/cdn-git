@@ -8,9 +8,14 @@
     <form class="form" method="post" action="/config/import" enctype="multipart/form-data">
       <div class="card">
         <div class="field">
-          <label>{{.T "import.dbFileLabel"}}</label>
-          <input type="file" name="dbFile" accept=".db,application/x-sqlite3,application/octet-stream" required />
-          <div class="hint">{{.T "import.dbFileHint"}}</div>
+          <label>{{.T "import.passwordLabel"}}</label>
+          <input type="password" name="password" value="" placeholder="{{.T "import.passwordPlaceholder"}}" />
+          <div class="hint">{{.T "import.passwordHint"}}</div>
+        </div>
+        <div class="field">
+          <label>{{.T "import.backupFileLabel"}}</label>
+          <input type="file" name="backupFile" accept=".hzdb,application/octet-stream" required />
+          <div class="hint">{{.T "import.backupFileHint"}}</div>
         </div>
         <div class="btn-row">
           <button class="btn primary" type="submit" onclick="return confirm({{printf "%q" (.T "import.confirm")}});">{{.T "import.importAndSave"}}</button>

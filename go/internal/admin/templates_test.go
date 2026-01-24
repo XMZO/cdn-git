@@ -144,6 +144,13 @@ func TestTemplatesRender(t *testing.T) {
 			},
 		},
 		{
+			name: "export",
+			data: exportData{
+				layoutData:      layoutData{Title: "下载备份", BodyTemplate: "export", User: adminUser, HasUsers: true},
+				MasterKeyIsSet:  true,
+			},
+		},
+		{
 			name: "import",
 			data: importData{
 				layoutData: layoutData{Title: "导入备份", BodyTemplate: "import", User: adminUser, HasUsers: true},

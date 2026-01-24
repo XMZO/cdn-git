@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"hazuki-go/internal/backup"
 	"hazuki-go/internal/i18n"
 	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
@@ -199,6 +201,11 @@ type accountData struct {
 type versionsData struct {
 	layoutData
 	Versions []storage.ConfigVersion
+}
+
+type exportData struct {
+	layoutData
+	MasterKeyIsSet bool
 }
 
 type importData struct {
@@ -2616,52 +2623,129 @@ func (s *server) configVersionsSub(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) configExport(w http.ResponseWriter, r *http.Request) {
+	st := getState(r.Context())
+	title := s.t(r, "page.export.title")
+
+	masterKey := strings.TrimSpace(os.Getenv("HAZUKI_MASTER_KEY"))
+	masterKeyIsSet := masterKey != ""
+
 	switch r.Method {
-	case http.MethodGet, http.MethodHead:
+	case http.MethodGet:
+		s.render(w, r, exportData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "export",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+			},
+			MasterKeyIsSet: masterKeyIsSet,
+		})
+		return
+	case http.MethodPost:
 		// continue
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	if err := r.ParseForm(); err != nil {
+		s.render(w, r, exportData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "export",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.t(r, "error.badRequest"),
+			},
+			MasterKeyIsSet: masterKeyIsSet,
+		})
+		return
+	}
+
+	keyModeRaw := strings.ToLower(strings.TrimSpace(r.FormValue("keyMode")))
+	keyMode := backup.KeyMode(keyModeRaw)
+	secret := ""
+
+	switch keyMode {
+	case backup.KeyModeMaster:
+		if !masterKeyIsSet {
+			s.render(w, r, exportData{
+				layoutData: layoutData{
+					Title:        title,
+					BodyTemplate: "export",
+					User:         st.User,
+					HasUsers:     st.HasUsers,
+					Error:        s.t(r, "error.exportMasterKeyMissing"),
+				},
+				MasterKeyIsSet: masterKeyIsSet,
+			})
+			return
+		}
+		secret = masterKey
+	case backup.KeyModePassword:
+		pass := strings.TrimSpace(r.FormValue("password"))
+		pass2 := strings.TrimSpace(r.FormValue("password2"))
+		if pass == "" {
+			s.render(w, r, exportData{
+				layoutData: layoutData{
+					Title:        title,
+					BodyTemplate: "export",
+					User:         st.User,
+					HasUsers:     st.HasUsers,
+					Error:        s.t(r, "error.exportPasswordRequired"),
+				},
+				MasterKeyIsSet: masterKeyIsSet,
+			})
+			return
+		}
+		if pass != pass2 {
+			s.render(w, r, exportData{
+				layoutData: layoutData{
+					Title:        title,
+					BodyTemplate: "export",
+					User:         st.User,
+					HasUsers:     st.HasUsers,
+					Error:        s.t(r, "error.exportPasswordMismatch"),
+				},
+				MasterKeyIsSet: masterKeyIsSet,
+			})
+			return
+		}
+		secret = pass
+	default:
+		s.render(w, r, exportData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "export",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Error:        s.t(r, "error.exportKeyModeInvalid"),
+			},
+			MasterKeyIsSet: masterKeyIsSet,
+		})
+		return
+	}
+
 	ts := time.Now().UTC().Format("20060102-150405Z")
-	filename := fmt.Sprintf("hazuki-backup-%s.db", ts)
+	filename := fmt.Sprintf("hazuki-backup-%s.hzdb", ts)
 
-	tmp, err := os.CreateTemp("", "hazuki-backup-*.db")
-	if err != nil {
-		http.Error(w, "Bad gateway", http.StatusBadGateway)
-		return
-	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	_ = os.Remove(tmpPath) // VACUUM INTO expects the destination to not exist.
-
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	vacuumCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	stmt := "VACUUM INTO " + sqliteQuote(tmpPath) + ";"
-	if _, err := s.db.ExecContext(vacuumCtx, stmt); err != nil {
-		http.Error(w, "Bad gateway", http.StatusBadGateway)
-		return
-	}
-
-	f, err := os.Open(tmpPath)
-	if err != nil {
-		http.Error(w, "Bad gateway", http.StatusBadGateway)
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	w.Header().Set("content-type", "application/x-sqlite3")
+	w.Header().Set("content-type", "application/octet-stream")
 	w.Header().Set("cache-control", "no-store")
+	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set(
 		"content-disposition",
 		fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", filename, url.PathEscape(filename)),
 	)
 
-	http.ServeContent(w, r, filename, time.Now(), f)
+	if err := backup.Export(r.Context(), s.db, w, backup.ExportOptions{
+		KeyMode:    keyMode,
+		Secret:     secret,
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+		ChunkSize:  64 << 10,
+	}); err != nil {
+		// At this point we may have already started writing the response body.
+		log.Printf("admin: backup export failed: %v", err)
+	}
 }
 
 func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
@@ -2687,20 +2771,8 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 
 	const maxUploadBytes = 512 << 20 // 512MB
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        s.t(r, "error.badRequest"),
-			},
-		})
-		return
-	}
 
-	file, _, err := r.FormFile("dbFile")
+	mr, err := r.MultipartReader()
 	if err != nil {
 		s.render(w, r, importData{
 			layoutData: layoutData{
@@ -2713,64 +2785,98 @@ func (s *server) configImport(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer func() { _ = file.Close() }()
 
-	tmp, err := os.CreateTemp("", "hazuki-import-*.db")
-	if err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        s.t(r, "error.failedSave"),
-			},
-		})
-		return
-	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
+	password := ""
 
-	if _, err := io.Copy(tmp, file); err != nil {
-		_ = tmp.Close()
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        s.t(r, "error.failedSave"),
-			},
-		})
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        s.t(r, "error.failedSave"),
-			},
-		})
-		return
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			s.render(w, r, importData{
+				layoutData: layoutData{
+					Title:        title,
+					BodyTemplate: "import",
+					User:         st.User,
+					HasUsers:     st.HasUsers,
+					Error:        s.t(r, "error.badRequest"),
+				},
+			})
+			return
+		}
+
+		switch strings.TrimSpace(part.FormName()) {
+		case "password":
+			raw, _ := io.ReadAll(io.LimitReader(part, 64<<10))
+			password = strings.TrimSpace(string(raw))
+			_ = part.Close()
+		case "backupFile":
+			masterKey := strings.TrimSpace(os.Getenv("HAZUKI_MASTER_KEY"))
+			if _, err := backup.Import(r.Context(), s.db, part, backup.ImportOptions{
+				Password:  password,
+				MasterKey: masterKey,
+			}); err != nil {
+				_ = part.Close()
+				s.render(w, r, importData{
+					layoutData: layoutData{
+						Title:        title,
+						BodyTemplate: "import",
+						User:         st.User,
+						HasUsers:     st.HasUsers,
+						Error:        s.errText(r, err),
+					},
+				})
+				return
+			}
+			_ = part.Close()
+
+			nextCrypto, err := storage.NewCryptoContext(s.db, masterKey)
+			if err != nil {
+				s.render(w, r, importData{
+					layoutData: layoutData{
+						Title:        title,
+						BodyTemplate: "import",
+						User:         st.User,
+						HasUsers:     st.HasUsers,
+						Error:        s.errText(r, err),
+					},
+				})
+				return
+			}
+			if err := s.config.ReloadFromDB(nextCrypto); err != nil {
+				s.render(w, r, importData{
+					layoutData: layoutData{
+						Title:        title,
+						BodyTemplate: "import",
+						User:         st.User,
+						HasUsers:     st.HasUsers,
+						Error:        s.errText(r, err),
+					},
+				})
+				return
+			}
+			if s.trafficPersist != nil {
+				_ = s.trafficPersist.Init(r.Context())
+				s.trafficPersist.ResetBaseline()
+			}
+
+			http.Redirect(w, r, "/config/versions?ok=1", http.StatusFound)
+			return
+		default:
+			_ = part.Close()
+		}
 	}
 
-	if err := s.importSQLiteBackup(r.Context(), tmpPath); err != nil {
-		s.render(w, r, importData{
-			layoutData: layoutData{
-				Title:        title,
-				BodyTemplate: "import",
-				User:         st.User,
-				HasUsers:     st.HasUsers,
-				Error:        s.errText(r, err),
-			},
-		})
-		return
-	}
-
-	http.Redirect(w, r, "/config/versions?ok=1", http.StatusFound)
+	s.render(w, r, importData{
+		layoutData: layoutData{
+			Title:        title,
+			BodyTemplate: "import",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Error:        s.t(r, "error.badRequest"),
+		},
+	})
 }
 
 func sqliteQuote(value string) string {
