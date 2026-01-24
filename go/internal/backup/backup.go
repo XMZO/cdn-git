@@ -340,9 +340,6 @@ func verifyConfigDecryptable(ctx context.Context, tx *sql.Tx, masterKey string) 
 	if err := tx.QueryRowContext(ctx, "SELECT config_json FROM config_current WHERE id = 1;").Scan(&configJSON); err != nil {
 		return err
 	}
-	if !strings.Contains(configJSON, "enc:v1:") {
-		return nil
-	}
 
 	var saltB64 string
 	_ = tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = ?;", "kdf_salt_b64").Scan(&saltB64)
@@ -356,8 +353,16 @@ func verifyConfigDecryptable(ctx context.Context, tx *sql.Tx, masterKey string) 
 		return err
 	}
 
+	plainJSON, err := crypto.DecryptString(strings.TrimSpace(configJSON))
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(plainJSON, "enc:v1:") {
+		return nil
+	}
+
 	var cfg model.AppConfig
-	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(plainJSON), &cfg); err != nil {
 		return err
 	}
 

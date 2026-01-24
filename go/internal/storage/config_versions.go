@@ -2,7 +2,6 @@ package storage
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -82,14 +81,20 @@ func (s *ConfigStore) RestoreVersion(versionID int64, userID *int64) error {
 		return err
 	}
 
-	var encrypted model.AppConfig
-	if err := json.Unmarshal([]byte(configJSON), &encrypted); err != nil {
+	encrypted, err := decodeConfigRow(configJSON, s.crypto)
+	if err != nil {
 		s.mu.Unlock()
 		return fmt.Errorf("version config json: %w", err)
 	}
 	if err := encrypted.Validate(); err != nil {
 		s.mu.Unlock()
 		return fmt.Errorf("version config invalid: %w", err)
+	}
+
+	encoded, err := encodeConfigRow(encrypted, s.crypto)
+	if err != nil {
+		s.mu.Unlock()
+		return err
 	}
 
 	now := nowIso()
@@ -101,7 +106,7 @@ func (s *ConfigStore) RestoreVersion(versionID int64, userID *int64) error {
 
 	if _, err := tx.Exec(
 		"UPDATE config_current SET config_json = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-		configJSON,
+		encoded,
 		now,
 		userID,
 		configRowID,
@@ -113,7 +118,7 @@ func (s *ConfigStore) RestoreVersion(versionID int64, userID *int64) error {
 
 	if _, err := tx.Exec(
 		"INSERT INTO config_versions (config_json, created_at, created_by, note) VALUES (?, ?, ?, ?)",
-		configJSON,
+		encoded,
 		now,
 		userID,
 		fmt.Sprintf("restore:%d", versionID),

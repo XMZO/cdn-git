@@ -47,8 +47,8 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 	}
 
 	if err == nil && configJSON != "" {
-		var encrypted model.AppConfig
-		if err := json.Unmarshal([]byte(configJSON), &encrypted); err != nil {
+		encrypted, err := decodeConfigRow(configJSON, s.crypto)
+		if err != nil {
 			return err
 		}
 
@@ -58,6 +58,12 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 		}
 		if err := decrypted.Validate(); err != nil {
 			return err
+		}
+
+		if upgraded, ok, err := s.maybeUpgradeConfigEncryption(configJSON, decrypted, s.crypto); err != nil {
+			return err
+		} else if ok {
+			encrypted = upgraded
 		}
 
 		s.mu.Lock()
@@ -79,7 +85,7 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 		return err
 	}
 
-	encryptedJSON, err := json.Marshal(encrypted)
+	encoded, err := encodeConfigRow(encrypted, s.crypto)
 	if err != nil {
 		return err
 	}
@@ -93,7 +99,7 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 	if _, err := tx.Exec(
 		"INSERT INTO config_current (id, config_json, updated_at, updated_by) VALUES (?, ?, ?, ?)",
 		configRowID,
-		string(encryptedJSON),
+		encoded,
 		now,
 		nil,
 	); err != nil {
@@ -103,7 +109,7 @@ func (s *ConfigStore) InitFromEnvironment(getEnv func(string) string, lookupEnv 
 
 	if _, err := tx.Exec(
 		"INSERT INTO config_versions (config_json, created_at, created_by, note) VALUES (?, ?, ?, ?)",
-		string(encryptedJSON),
+		encoded,
 		now,
 		nil,
 		"seed",
@@ -142,21 +148,28 @@ func (s *ConfigStore) ReloadFromDB(crypto *CryptoContext) error {
 		return errors.New("config_current is empty")
 	}
 
-	var encrypted model.AppConfig
-	if err := json.Unmarshal([]byte(configJSON), &encrypted); err != nil {
-		return err
-	}
-
 	useCrypto := crypto
 	if useCrypto == nil {
 		useCrypto = s.crypto
 	}
+
+	encrypted, err := decodeConfigRow(configJSON, useCrypto)
+	if err != nil {
+		return err
+	}
+
 	decrypted, err := decryptConfigSecrets(encrypted, useCrypto)
 	if err != nil {
 		return err
 	}
 	if err := decrypted.Validate(); err != nil {
 		return err
+	}
+
+	if upgraded, ok, err := s.maybeUpgradeConfigEncryption(configJSON, decrypted, useCrypto); err != nil {
+		return err
+	} else if ok {
+		encrypted = upgraded
 	}
 
 	s.mu.Lock()
@@ -334,7 +347,7 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 		s.mu.Unlock()
 		return err
 	}
-	encryptedJSON, err := json.Marshal(encrypted)
+	encoded, err := encodeConfigRow(encrypted, s.crypto)
 	if err != nil {
 		s.mu.Unlock()
 		return err
@@ -349,7 +362,7 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 
 	if _, err := tx.Exec(
 		"UPDATE config_current SET config_json = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-		string(encryptedJSON),
+		encoded,
 		now,
 		req.UserID,
 		configRowID,
@@ -361,7 +374,7 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 
 	if _, err := tx.Exec(
 		"INSERT INTO config_versions (config_json, created_at, created_by, note) VALUES (?, ?, ?, ?)",
-		string(encryptedJSON),
+		encoded,
 		now,
 		req.UserID,
 		nullIfEmpty(req.Note),
@@ -556,4 +569,84 @@ func (s *ConfigStore) DebugString() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return fmt.Sprintf("ConfigStore{inited=%v, updatedAt=%q}", s.inited, s.updatedAt)
+}
+
+func (s *ConfigStore) maybeUpgradeConfigEncryption(storedConfigJSON string, decrypted model.AppConfig, crypto *CryptoContext) (model.AppConfig, bool, error) {
+	if s == nil || s.db == nil || crypto == nil || !crypto.Enabled {
+		return model.AppConfig{}, false, nil
+	}
+	if strings.HasPrefix(strings.TrimSpace(storedConfigJSON), encPrefix) {
+		return model.AppConfig{}, false, nil
+	}
+
+	upgraded, err := encryptConfigSecrets(decrypted, crypto)
+	if err != nil {
+		return model.AppConfig{}, false, err
+	}
+	encoded, err := encodeConfigRow(upgraded, crypto)
+	if err != nil {
+		return model.AppConfig{}, false, err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.AppConfig{}, false, err
+	}
+
+	if _, err := tx.Exec("UPDATE config_current SET config_json = ? WHERE id = ?", encoded, configRowID); err != nil {
+		_ = tx.Rollback()
+		return model.AppConfig{}, false, err
+	}
+
+	rows, err := tx.Query("SELECT id, config_json FROM config_versions")
+	if err != nil {
+		_ = tx.Rollback()
+		return model.AppConfig{}, false, err
+	}
+
+	for rows.Next() {
+		var id int64
+		var cfg string
+		if err := rows.Scan(&id, &cfg); err != nil {
+			_ = rows.Close()
+			_ = tx.Rollback()
+			return model.AppConfig{}, false, err
+		}
+		if strings.HasPrefix(strings.TrimSpace(cfg), encPrefix) {
+			continue
+		}
+		encCfg, err := decodeConfigRow(cfg, crypto)
+		if err != nil {
+			continue
+		}
+		decCfg, err := decryptConfigSecrets(encCfg, crypto)
+		if err != nil {
+			continue
+		}
+		if err := decCfg.Validate(); err != nil {
+			continue
+		}
+		nextEnc, err := encryptConfigSecrets(decCfg, crypto)
+		if err != nil {
+			continue
+		}
+		nextJSON, err := encodeConfigRow(nextEnc, crypto)
+		if err != nil {
+			continue
+		}
+		if _, err := tx.Exec("UPDATE config_versions SET config_json = ? WHERE id = ?", nextJSON, id); err != nil {
+			continue
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		return model.AppConfig{}, false, err
+	}
+	_ = rows.Close()
+
+	if err := tx.Commit(); err != nil {
+		return model.AppConfig{}, false, err
+	}
+	return upgraded, true, nil
 }

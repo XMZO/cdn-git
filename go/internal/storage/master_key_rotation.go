@@ -1,11 +1,8 @@
 package storage
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-
-	"hazuki-go/internal/model"
 )
 
 func (s *ConfigStore) RotateMasterKey(currentMasterKey, newMasterKey string) error {
@@ -36,7 +33,7 @@ func (s *ConfigStore) RotateMasterKey(currentMasterKey, newMasterKey string) err
 		s.mu.Unlock()
 		return err
 	}
-	currentJSON, err := json.Marshal(reencryptedCurrent)
+	encodedCurrent, err := encodeConfigRow(reencryptedCurrent, newCrypto)
 	if err != nil {
 		s.mu.Unlock()
 		return err
@@ -53,7 +50,7 @@ func (s *ConfigStore) RotateMasterKey(currentMasterKey, newMasterKey string) err
 		return retErr
 	}
 
-	if _, err := tx.Exec("UPDATE config_current SET config_json = ? WHERE id = ?", string(currentJSON), configRowID); err != nil {
+	if _, err := tx.Exec("UPDATE config_current SET config_json = ? WHERE id = ?", encodedCurrent, configRowID); err != nil {
 		s.mu.Unlock()
 		return rollback(err)
 	}
@@ -87,10 +84,10 @@ func (s *ConfigStore) RotateMasterKey(currentMasterKey, newMasterKey string) err
 	_ = rows.Close()
 
 	for _, r := range all {
-		var encrypted model.AppConfig
-		if err := json.Unmarshal([]byte(r.cfg), &encrypted); err != nil {
+		encrypted, err := decodeConfigRow(r.cfg, oldCrypto)
+		if err != nil {
 			s.mu.Unlock()
-			return rollback(fmt.Errorf("config_versions[%d]: json: %w", r.id, err))
+			return rollback(fmt.Errorf("config_versions[%d]: decode: %w", r.id, err))
 		}
 		decrypted, err := decryptConfigSecrets(encrypted, oldCrypto)
 		if err != nil {
@@ -102,12 +99,12 @@ func (s *ConfigStore) RotateMasterKey(currentMasterKey, newMasterKey string) err
 			s.mu.Unlock()
 			return rollback(fmt.Errorf("config_versions[%d]: encrypt: %w", r.id, err))
 		}
-		encryptedJSON, err := json.Marshal(reencrypted)
+		encoded, err := encodeConfigRow(reencrypted, newCrypto)
 		if err != nil {
 			s.mu.Unlock()
-			return rollback(fmt.Errorf("config_versions[%d]: marshal: %w", r.id, err))
+			return rollback(fmt.Errorf("config_versions[%d]: encode: %w", r.id, err))
 		}
-		if _, err := tx.Exec("UPDATE config_versions SET config_json = ? WHERE id = ?", string(encryptedJSON), r.id); err != nil {
+		if _, err := tx.Exec("UPDATE config_versions SET config_json = ? WHERE id = ?", encoded, r.id); err != nil {
 			s.mu.Unlock()
 			return rollback(fmt.Errorf("config_versions[%d]: update: %w", r.id, err))
 		}

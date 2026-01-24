@@ -728,6 +728,16 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	title := s.t(r, "page.setup.title")
+	if !s.config.IsEncryptionEnabled() {
+		s.render(w, r, layoutData{
+			Title:        title,
+			BodyTemplate: "setup",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Error:        s.t(r, "error.masterKeyLoginDisabled"),
+		})
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -813,6 +823,16 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	title := s.t(r, "page.login.title")
+	if !s.config.IsEncryptionEnabled() {
+		s.render(w, r, layoutData{
+			Title:        title,
+			BodyTemplate: "login",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Error:        s.t(r, "error.masterKeyLoginDisabled"),
+		})
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
