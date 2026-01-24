@@ -195,6 +195,9 @@
           <div class="muted">{{.T "system.redis.dbSize"}}</div>
           <div><code>{{.Redis.DBSize}}</code> {{.T "system.redis.keys"}}</div>
         </div>
+        <div class="btn-row" style="margin-top:12px;">
+          <a class="btn" href="/system/redis-cache">{{.T "system.redis.cacheManage"}}</a>
+        </div>
       {{else if eq .Redis.Status "error"}}
         <div class="pill err">{{.T "redis.error"}} · <code>{{.Redis.Addr}}</code></div>
         {{if .Redis.Error}}<div class="muted small" style="margin-top:10px;">{{.T "common.errorPrefix"}}：{{.Redis.Error}}</div>{{end}}

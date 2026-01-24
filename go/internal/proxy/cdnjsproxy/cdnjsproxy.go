@@ -3,6 +3,8 @@ package cdnjsproxy
 import (
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +20,20 @@ import (
 	"hazuki-go/internal/model"
 	"hazuki-go/internal/proxy/upstreamhttp"
 )
+
+const RedisMarkerKey = "hazuki:meta:app"
+const RedisMarkerValue = "hazuki-go"
+const RedisPrefix = "hazuki:cdnjs:"
+const RedisIndexKey = RedisPrefix + "index"
+
+func cacheID(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
+func cacheBodyKey(id string) string { return RedisPrefix + "body:" + id }
+func cacheTypeKey(id string) string { return RedisPrefix + "type:" + id }
+func cacheMetaKey(id string) string { return RedisPrefix + "meta:" + id }
 
 type RuntimeConfig struct {
 	Host string
@@ -398,10 +414,17 @@ func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfi
 
 	var cached []byte
 	var cachedType string
+	cacheKeyID := cacheID(cdnURL)
+	bodyKey := cacheBodyKey(cacheKeyID)
+	typeKey := cacheTypeKey(cacheKeyID)
 	if redisClient != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 250*time.Millisecond)
-		cached, _ = redisClient.Get(ctx, cdnURL).Bytes()
-		cachedType, _ = redisClient.Get(ctx, cdnURL+":type").Result()
+		pipe := redisClient.Pipeline()
+		bodyCmd := pipe.Get(ctx, bodyKey)
+		typeCmd := pipe.Get(ctx, typeKey)
+		_, _ = pipe.Exec(ctx)
+		cached, _ = bodyCmd.Bytes()
+		cachedType, _ = typeCmd.Result()
 		cancel()
 	}
 
@@ -414,8 +437,12 @@ func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfi
 		ch := sf.DoChan(cdnURL, func() (any, error) {
 			// Double-check cache in case another goroutine/process filled it.
 			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-			body, _ := redisClient.Get(ctx, cdnURL).Bytes()
-			typ, _ := redisClient.Get(ctx, cdnURL+":type").Result()
+			pipe := redisClient.Pipeline()
+			bodyCmd := pipe.Get(ctx, bodyKey)
+			typeCmd := pipe.Get(ctx, typeKey)
+			_, _ = pipe.Exec(ctx)
+			body, _ := bodyCmd.Bytes()
+			typ, _ := typeCmd.Result()
 			cancel()
 
 			if body != nil && strings.TrimSpace(typ) != "" {
@@ -458,10 +485,22 @@ func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfi
 
 			ctx3, cancel3 := context.WithTimeout(context.Background(), 750*time.Millisecond)
 			ttl := time.Duration(ttlSeconds) * time.Second
-			pipe := redisClient.Pipeline()
-			pipe.SetEx(ctx3, cdnURL, respBody, ttl)
-			pipe.SetEx(ctx3, cdnURL+":type", contentType, ttl)
-			_, _ = pipe.Exec(ctx3)
+			nowUnix := time.Now().UTC().Unix()
+			pipe2 := redisClient.Pipeline()
+			metaKey := cacheMetaKey(cacheKeyID)
+			pipe2.SetNX(ctx3, RedisMarkerKey, RedisMarkerValue, 0)
+			pipe2.SetEx(ctx3, bodyKey, respBody, ttl)
+			pipe2.SetEx(ctx3, typeKey, contentType, ttl)
+			pipe2.HSet(ctx3, metaKey,
+				"url", cdnURL,
+				"type", contentType,
+				"size", len(respBody),
+				"updatedAt", nowUnix,
+			)
+			pipe2.Expire(ctx3, metaKey, ttl)
+			pipe2.ZAdd(ctx3, RedisIndexKey, redis.Z{Score: float64(nowUnix), Member: cacheKeyID})
+			pipe2.ZRemRangeByRank(ctx3, RedisIndexKey, 0, -5001)
+			_, _ = pipe2.Exec(ctx3)
 			cancel3()
 
 			return struct {
@@ -547,9 +586,21 @@ func fetchWithCache(w http.ResponseWriter, r *http.Request, runtime RuntimeConfi
 	if redisClient != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 		ttl := time.Duration(ttlSeconds) * time.Second
+		nowUnix := time.Now().UTC().Unix()
 		pipe := redisClient.Pipeline()
-		pipe.SetEx(ctx, cdnURL, body, ttl)
-		pipe.SetEx(ctx, cdnURL+":type", contentType, ttl)
+		metaKey := cacheMetaKey(cacheKeyID)
+		pipe.SetNX(ctx, RedisMarkerKey, RedisMarkerValue, 0)
+		pipe.SetEx(ctx, bodyKey, body, ttl)
+		pipe.SetEx(ctx, typeKey, contentType, ttl)
+		pipe.HSet(ctx, metaKey,
+			"url", cdnURL,
+			"type", contentType,
+			"size", len(body),
+			"updatedAt", nowUnix,
+		)
+		pipe.Expire(ctx, metaKey, ttl)
+		pipe.ZAdd(ctx, RedisIndexKey, redis.Z{Score: float64(nowUnix), Member: cacheKeyID})
+		pipe.ZRemRangeByRank(ctx, RedisIndexKey, 0, -5001)
 		_, _ = pipe.Exec(ctx)
 		cancel()
 	}

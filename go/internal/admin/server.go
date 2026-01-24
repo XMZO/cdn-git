@@ -241,6 +241,37 @@ type systemData struct {
 	Redis redisStatus
 }
 
+type redisCacheEntry struct {
+	ID         string
+	URL        string
+	Type       string
+	SizeBytes  int64
+	SizeHuman  string
+	UpdatedAt  string
+	TTLSeconds int64
+}
+
+type redisCacheData struct {
+	layoutData
+
+	Redis redisStatus
+
+	MarkerKey     string
+	MarkerValue   string
+	MarkerPresent bool
+
+	IndexKey      string
+	TrackedCount  int64
+	Page          int
+	Limit         int
+	Entries       []redisCacheEntry
+	HasPrev       bool
+	HasNext       bool
+	PrevPage      int
+	NextPage      int
+	ClearableDesc string
+}
+
 type trafficData struct {
 	layoutData
 	Retention    storage.TrafficRetention
@@ -346,6 +377,9 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/system/timezone", s.wrapRequireAuth(s.systemTimeZone))
 	mux.HandleFunc("/system/master-key", s.wrapRequireAuth(s.systemMasterKey))
 	mux.HandleFunc("/system/master-key/verify", s.wrapRequireAuth(s.systemMasterKeyVerify))
+	mux.HandleFunc("/system/redis-cache", s.wrapRequireAuth(s.redisCache))
+	mux.HandleFunc("/system/redis-cache/clear", s.wrapRequireAuth(s.redisCacheClear))
+	mux.HandleFunc("/system/redis-cache/delete", s.wrapRequireAuth(s.redisCacheDelete))
 	mux.HandleFunc("/traffic", s.wrapRequireAuth(s.traffic))
 	mux.HandleFunc("/traffic/retention", s.wrapRequireAuth(s.trafficRetention))
 	mux.HandleFunc("/traffic/cleanup", s.wrapRequireAuth(s.trafficCleanup))
@@ -1380,6 +1414,274 @@ func (s *server) systemMasterKeyVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/system?ok=masterKeyVerify", http.StatusFound)
+}
+
+func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
+	st := getState(r.Context())
+	title := s.t(r, "page.redisCache.title")
+
+	switch r.Method {
+	case http.MethodGet:
+		// continue
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	notice := ""
+	if ok := strings.TrimSpace(r.URL.Query().Get("ok")); ok != "" {
+		switch ok {
+		case "cleared":
+			n := strings.TrimSpace(r.URL.Query().Get("n"))
+			if n == "" {
+				n = "0"
+			}
+			notice = s.t(r, "redisCache.clearedNotice", n)
+		case "deleted":
+			notice = s.t(r, "redisCache.deletedNotice")
+		default:
+			notice = s.t(r, "common.saved")
+		}
+	}
+	errMsg := ""
+	if errQ := strings.TrimSpace(r.URL.Query().Get("err")); errQ != "" {
+		switch errQ {
+		case "redis":
+			errMsg = s.t(r, "redisCache.errorRedis")
+		default:
+			errMsg = s.t(r, "error.badRequest")
+		}
+	}
+
+	cfg, err := s.config.GetDecryptedConfig()
+	if err != nil {
+		s.render(w, r, redisCacheData{
+			layoutData: layoutData{
+				Title:        title,
+				BodyTemplate: "redis_cache",
+				User:         st.User,
+				HasUsers:     st.HasUsers,
+				Notice:       notice,
+				Error:        err.Error(),
+			},
+		})
+		return
+	}
+
+	redisSt := checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	data := redisCacheData{
+		layoutData: layoutData{
+			Title:        title,
+			BodyTemplate: "redis_cache",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Notice:       notice,
+			Error:        errMsg,
+		},
+		Redis:        redisSt,
+		MarkerKey:    cdnjsproxy.RedisMarkerKey,
+		MarkerValue:  cdnjsproxy.RedisMarkerValue,
+		IndexKey:     cdnjsproxy.RedisIndexKey,
+		Limit:        100,
+		Page:         1,
+		ClearableDesc: cdnjsproxy.RedisPrefix + "*",
+	}
+
+	if redisSt.Status != "ok" {
+		s.render(w, r, data)
+		return
+	}
+
+	limit := 100
+	if v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit"))); err == nil && v > 0 {
+		limit = v
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	page := 1
+	if v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page"))); err == nil && v > 0 {
+		page = v
+	}
+
+	client, _, ok := newRedisAdminClient(cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	if !ok || client == nil {
+		data.Redis = redisStatus{Status: "disabled"}
+		s.render(w, r, data)
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	marker, err := client.Get(ctx, cdnjsproxy.RedisMarkerKey).Result()
+	if err == nil && strings.TrimSpace(marker) != "" {
+		data.MarkerPresent = true
+	}
+
+	total, err := client.ZCard(ctx, cdnjsproxy.RedisIndexKey).Result()
+	if err != nil {
+		data.Error = s.t(r, "redisCache.errorRedis")
+		s.render(w, r, data)
+		return
+	}
+	data.TrackedCount = total
+	data.Page = page
+	data.Limit = limit
+
+	start := int64((page - 1) * limit)
+	stop := start + int64(limit) - 1
+	ids, err := client.ZRevRange(ctx, cdnjsproxy.RedisIndexKey, start, stop).Result()
+	if err != nil {
+		data.Error = s.t(r, "redisCache.errorRedis")
+		s.render(w, r, data)
+		return
+	}
+
+	pipe := client.Pipeline()
+	metaCmds := make([]*redis.MapStringStringCmd, 0, len(ids))
+	ttlCmds := make([]*redis.DurationCmd, 0, len(ids))
+	for _, id := range ids {
+		metaCmds = append(metaCmds, pipe.HGetAll(ctx, cdnjsproxy.RedisPrefix+"meta:"+id))
+		ttlCmds = append(ttlCmds, pipe.TTL(ctx, cdnjsproxy.RedisPrefix+"body:"+id))
+	}
+	_, _ = pipe.Exec(ctx)
+
+	entries := make([]redisCacheEntry, 0, len(ids))
+	stale := make([]any, 0, len(ids))
+	for i, id := range ids {
+		meta, _ := metaCmds[i].Result()
+		if len(meta) == 0 {
+			stale = append(stale, id)
+			continue
+		}
+
+		url := strings.TrimSpace(meta["url"])
+		typ := strings.TrimSpace(meta["type"])
+		sizeBytes := int64(0)
+		if v, err := strconv.ParseInt(strings.TrimSpace(meta["size"]), 10, 64); err == nil && v > 0 {
+			sizeBytes = v
+		}
+		sizeHuman := ""
+		if sizeBytes > 0 {
+			sizeHuman = formatBytes(sizeBytes)
+		}
+		updatedAt := ""
+		if v, err := strconv.ParseInt(strings.TrimSpace(meta["updatedAt"]), 10, 64); err == nil && v > 0 {
+			updatedAt = time.Unix(v, 0).UTC().Format(time.RFC3339)
+		}
+
+		ttl := int64(0)
+		if d, err := ttlCmds[i].Result(); err == nil {
+			ttl = int64(d.Seconds())
+		}
+
+		entries = append(entries, redisCacheEntry{
+			ID:         id,
+			URL:        url,
+			Type:       typ,
+			SizeBytes:  sizeBytes,
+			SizeHuman:  sizeHuman,
+			UpdatedAt:  updatedAt,
+			TTLSeconds: ttl,
+		})
+	}
+	data.Entries = entries
+
+	data.HasPrev = page > 1
+	data.HasNext = int64(page*limit) < total
+	data.PrevPage = page - 1
+	data.NextPage = page + 1
+
+	// Best-effort: prune stale index entries (expired keys).
+	if len(stale) > 0 {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		_, _ = client.ZRem(ctx2, cdnjsproxy.RedisIndexKey, stale...).Result()
+		cancel2()
+	}
+
+	s.render(w, r, data)
+}
+
+func (s *server) redisCacheClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, err := s.config.GetDecryptedConfig()
+	if err != nil {
+		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		return
+	}
+
+	client, _, ok := newRedisAdminClient(cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	if !ok || client == nil {
+		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	var deleted int64
+	cursor := uint64(0)
+	for {
+		keys, next, err := client.Scan(ctx, cursor, cdnjsproxy.RedisPrefix+"*", 500).Result()
+		if err != nil {
+			http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+			return
+		}
+		if len(keys) > 0 {
+			n, _ := client.Del(ctx, keys...).Result()
+			deleted += n
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+
+	http.Redirect(w, r, "/system/redis-cache?ok=cleared&n="+url.QueryEscape(strconv.FormatInt(deleted, 10)), http.StatusFound)
+}
+
+func (s *server) redisCacheDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/system/redis-cache?err=bad", http.StatusFound)
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		http.Redirect(w, r, "/system/redis-cache?err=bad", http.StatusFound)
+		return
+	}
+
+	cfg, err := s.config.GetDecryptedConfig()
+	if err != nil {
+		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		return
+	}
+
+	client, _, ok := newRedisAdminClient(cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	if !ok || client == nil {
+		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	_, _ = client.Del(ctx, cdnjsproxy.RedisPrefix+"body:"+id, cdnjsproxy.RedisPrefix+"type:"+id, cdnjsproxy.RedisPrefix+"meta:"+id).Result()
+	_, _ = client.ZRem(ctx, cdnjsproxy.RedisIndexKey, id).Result()
+
+	http.Redirect(w, r, "/system/redis-cache?ok=deleted", http.StatusFound)
 }
 
 func (s *server) traffic(w http.ResponseWriter, r *http.Request) {
@@ -4079,6 +4381,29 @@ func checkRedisStatus(ctx context.Context, host string, port int) redisStatus {
 	}
 
 	return st
+}
+
+func newRedisAdminClient(host string, port int) (*redis.Client, string, bool) {
+	host = strings.TrimSpace(host)
+	if host == "" || port <= 0 || port > 65535 {
+		return nil, "", false
+	}
+
+	addr := ""
+	if h, p, err := net.SplitHostPort(host); err == nil && strings.TrimSpace(h) != "" && strings.TrimSpace(p) != "" {
+		addr = net.JoinHostPort(h, p)
+	} else {
+		addr = net.JoinHostPort(host, strconv.Itoa(port))
+	}
+
+	return redis.NewClient(&redis.Options{
+		Addr:         addr,
+		MaxRetries:   1,
+		PoolSize:     2,
+		DialTimeout:  500 * time.Millisecond,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+	}), addr, true
 }
 
 func disabledServiceStatus(port int) serviceStatus {

@@ -81,6 +81,38 @@ func TestTemplatesRender(t *testing.T) {
 			},
 		},
 		{
+			name: "redis_cache",
+			data: redisCacheData{
+				layoutData: layoutData{Title: "Redis 缓存", BodyTemplate: "redis_cache", User: adminUser, HasUsers: true},
+				Redis: redisStatus{
+					Addr:          "redis:6379",
+					Status:        "ok",
+					LatencyMS:     1,
+					ServerVersion: "7.0.0",
+					DBSize:        10,
+				},
+				MarkerKey:     "hazuki:meta:app",
+				MarkerValue:   "hazuki-go",
+				MarkerPresent: true,
+				IndexKey:      "hazuki:cdnjs:index",
+				ClearableDesc: "hazuki:cdnjs:*",
+				TrackedCount:  1,
+				Page:          1,
+				Limit:         100,
+				Entries: []redisCacheEntry{
+					{
+						ID:         "abcd",
+						URL:        "https://cdn.jsdelivr.net/gh/XMZO/pic/main/a.png",
+						Type:       "image/png",
+						SizeBytes:  123,
+						SizeHuman:  "123 B",
+						UpdatedAt:  "2026-01-01T00:00:00Z",
+						TTLSeconds: 3600,
+					},
+				},
+			},
+		},
+		{
 			name: "wizard",
 			data: wizardData{
 				layoutData: layoutData{Title: "快速向导", BodyTemplate: "wizard", User: adminUser, HasUsers: true},

@@ -1,0 +1,132 @@
+{{define "redis_cache"}}
+  <div class="grid">
+    <div class="card">
+      <h2>{{.Title}}</h2>
+      <div class="muted small">{{.T "redisCache.subtitle"}}</div>
+      <div class="btn-row">
+        <a class="btn" href="/system">{{.T "nav.system"}}</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>{{.T "system.redisTitle"}}</h3>
+
+      {{if eq .Redis.Status "ok"}}
+        <div class="pill ok">{{.T "redis.ok"}} · {{.Redis.LatencyMS}}ms · <code>{{.Redis.Addr}}</code></div>
+        <div class="kvs" style="margin-top:12px;">
+          <div class="muted">{{.T "system.redis.version"}}</div>
+          <div>{{if .Redis.ServerVersion}}<code>{{.Redis.ServerVersion}}</code>{{else}}-{{end}}</div>
+          <div class="muted">{{.T "system.redis.uptime"}}</div>
+          <div>{{if gt .Redis.UptimeSeconds 0}}<code>{{.Redis.UptimeSeconds}}</code> {{.T "system.seconds"}}{{else}}-{{end}}</div>
+          <div class="muted">{{.T "system.redis.clients"}}</div>
+          <div>{{if gt .Redis.ConnectedClients 0}}<code>{{.Redis.ConnectedClients}}</code>{{else}}-{{end}}</div>
+          <div class="muted">{{.T "system.redis.usedMemory"}}</div>
+          <div>{{if .Redis.UsedMemoryHuman}}<code>{{.Redis.UsedMemoryHuman}}</code>{{else}}-{{end}}</div>
+          <div class="muted">{{.T "system.redis.dbSize"}}</div>
+          <div><code>{{.Redis.DBSize}}</code> {{.T "system.redis.keys"}}</div>
+
+          <div class="muted">{{.T "redisCache.marker"}}</div>
+          <div>
+            {{if .MarkerPresent}}
+              <span class="pill ok">{{.T "redisCache.markerPresent"}}</span>
+            {{else}}
+              <span class="pill">{{.T "redisCache.markerMissing"}}</span>
+            {{end}}
+            <div class="muted small" style="margin-top:8px;">
+              <code>{{.MarkerKey}}</code> = <code>{{.MarkerValue}}</code>
+            </div>
+          </div>
+
+          <div class="muted">{{.T "redisCache.tracked"}}</div>
+          <div>
+            <code>{{.TrackedCount}}</code>
+            <span class="muted small" style="margin-left:6px;">({{.IndexKey}})</span>
+          </div>
+        </div>
+      {{else if eq .Redis.Status "error"}}
+        <div class="pill err">{{.T "redis.error"}} · <code>{{.Redis.Addr}}</code></div>
+        {{if .Redis.Error}}<div class="muted small" style="margin-top:10px;">{{.T "common.errorPrefix"}}：{{.Redis.Error}}</div>{{end}}
+      {{else}}
+        <div class="pill">{{.T "redis.notConfigured"}}</div>
+      {{end}}
+    </div>
+
+    {{if eq .Redis.Status "ok"}}
+      <div class="card">
+        <h3>{{.T "redisCache.actions"}}</h3>
+        <div class="muted small">{{.T "redisCache.clearHint"}} <code>{{.ClearableDesc}}</code></div>
+        <form method="post" action="/system/redis-cache/clear" style="margin-top:12px;">
+          <button
+            class="btn danger"
+            type="submit"
+            data-confirm-submit="{{.T "redisCache.clearConfirmTitle"}}"
+            data-confirm-detail="{{.T "redisCache.clearConfirmDetail"}}"
+            data-confirm-ok="{{.T "redisCache.clearConfirmOk"}}"
+          >
+            {{.T "redisCache.clearAll"}}
+          </button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>{{.T "redisCache.listTitle"}}</h3>
+        {{if not .Entries}}
+          <div class="muted small">{{.T "redisCache.empty"}}</div>
+        {{else}}
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>{{.T "redisCache.url"}}</th>
+                  <th>{{.T "redisCache.type"}}</th>
+                  <th>{{.T "redisCache.size"}}</th>
+                  <th>{{.T "redisCache.ttl"}}</th>
+                  <th>{{.T "redisCache.updatedAt"}}</th>
+                  <th>{{.T "common.actions"}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Entries}}
+                  <tr>
+                    <td>
+                      {{if .URL}}
+                        <code style="max-width:520px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:inline-block;">{{.URL}}</code>
+                      {{else}}
+                        <code style="opacity:0.7">{{.ID}}</code>
+                      {{end}}
+                    </td>
+                    <td>{{if .Type}}<code>{{.Type}}</code>{{else}}-{{end}}</td>
+                    <td>{{if .SizeHuman}}<code>{{.SizeHuman}}</code>{{else}}{{if gt .SizeBytes 0}}<code>{{.SizeBytes}}</code>{{else}}-{{end}}{{end}}</td>
+                    <td>{{if gt .TTLSeconds 0}}<code>{{.TTLSeconds}}</code>s{{else}}-{{end}}</td>
+                    <td>{{if .UpdatedAt}}<code data-hz-iso="{{.UpdatedAt}}">{{.UpdatedAt}}</code>{{else}}-{{end}}</td>
+                    <td>
+                      <form method="post" action="/system/redis-cache/delete" style="margin:0;">
+                        <input type="hidden" name="id" value="{{.ID}}" />
+                        <button class="btn" type="submit">{{$.T "redisCache.deleteOne"}}</button>
+                      </form>
+                    </td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="btn-row" style="margin-top:12px;">
+            {{if .HasPrev}}
+              <a class="btn" href="/system/redis-cache?page={{.PrevPage}}&limit={{.Limit}}">{{.T "common.prev"}}</a>
+            {{else}}
+              <span class="btn" style="opacity:.5; pointer-events:none;">{{.T "common.prev"}}</span>
+            {{end}}
+
+            {{if .HasNext}}
+              <a class="btn" href="/system/redis-cache?page={{.NextPage}}&limit={{.Limit}}">{{.T "common.next"}}</a>
+            {{else}}
+              <span class="btn" style="opacity:.5; pointer-events:none;">{{.T "common.next"}}</span>
+            {{end}}
+          </div>
+        {{end}}
+      </div>
+    {{end}}
+  </div>
+{{end}}
+
