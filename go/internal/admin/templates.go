@@ -14,20 +14,19 @@ var uiFS embed.FS
 var uiAssetsFS = mustSub(uiFS, "ui/assets")
 
 var bodyTemplateAllowList = map[string]struct{}{
-	"login":           {},
-	"setup":           {},
-	"dashboard":       {},
-	"system":          {},
-	"traffic":         {},
-	"wizard":          {},
-	"torcherino":      {},
-	"cdnjs":           {},
-	"git":             {},
-	"sakuya_oplist":   {},
-	"sakuya_onedrive": {},
-	"versions":        {},
-	"import":          {},
-	"account":         {},
+	"login":         {},
+	"setup":         {},
+	"dashboard":     {},
+	"system":        {},
+	"traffic":       {},
+	"wizard":        {},
+	"torcherino":    {},
+	"cdnjs":         {},
+	"git":           {},
+	"sakuya_oplist": {},
+	"versions":      {},
+	"import":        {},
+	"account":       {},
 }
 
 var pageTemplates = mustLoadTemplates()

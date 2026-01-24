@@ -29,7 +29,7 @@ func TestTemplatesRender(t *testing.T) {
 			data: dashboardData{
 				layoutData:          layoutData{Title: "概览", BodyTemplate: "dashboard", User: adminUser, HasUsers: true},
 				UpdatedAt:           "2026-01-01 00:00:00",
-				Ports:               model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200, SakuyaOneDrive: 3201},
+				Ports:               model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200},
 				AdminURL:            "http://127.0.0.1:3100",
 				TorcherinoURL:       "http://127.0.0.1:3000",
 				TorcherinoHealthURL: "http://127.0.0.1:3000/_hazuki/health",
@@ -60,14 +60,13 @@ func TestTemplatesRender(t *testing.T) {
 				VersionsCount: 2,
 				SessionsCount: 3,
 
-				Ports: model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200, SakuyaOneDrive: 3201},
+				Ports: model.PortsConfig{Admin: 3100, Torcherino: 3000, Cdnjs: 3001, Git: 3002, Sakuya: 3200},
 
-				AdminStatus:          serviceStatus{Status: "ok", LatencyMS: 1},
-				TorcherinoStatus:     serviceStatus{Status: "ok", LatencyMS: 1},
-				CdnjsStatus:          serviceStatus{Status: "ok", LatencyMS: 1},
-				GitStatus:            serviceStatus{Status: "ok", LatencyMS: 1},
-				SakuyaOplistStatus:   serviceStatus{Status: "disabled"},
-				SakuyaOneDriveStatus: serviceStatus{Status: "disabled"},
+				AdminStatus:        serviceStatus{Status: "ok", LatencyMS: 1},
+				TorcherinoStatus:   serviceStatus{Status: "ok", LatencyMS: 1},
+				CdnjsStatus:        serviceStatus{Status: "ok", LatencyMS: 1},
+				GitStatus:          serviceStatus{Status: "ok", LatencyMS: 1},
+				SakuyaOplistStatus: serviceStatus{Status: "disabled"},
 
 				Redis: redisStatus{
 					Addr:          "redis:6379",
@@ -133,24 +132,6 @@ func TestTemplatesRender(t *testing.T) {
 				SakuyaBaseURL:        "http://127.0.0.1:3200",
 				SakuyaHealthURL:      "http://127.0.0.1:3200/_hazuki/health",
 				SakuyaStatus:         serviceStatus{Status: "disabled"},
-			},
-		},
-		{
-			name: "sakuya_onedrive",
-			data: sakuyaOneDriveData{
-				layoutData:                  layoutData{Title: "Sakuya · OneDrive", BodyTemplate: "sakuya_onedrive", User: adminUser, HasUsers: true},
-				Sakuya:                      model.SakuyaConfig{Disabled: false, OneDrive: model.SakuyaOneDrive{Disabled: false}},
-				SakuyaOneDrivePortValue:     "3201",
-				OneDriveUpstreamValue:       "test-my.sharepoint.com",
-				OneDriveUpstreamPathValue:   "/",
-				OneDriveHTTPSValue:          true,
-				OneDriveDisableCacheValue:   false,
-				OneDriveBlockedRegionsValue: "KP,SY,PK,CU",
-				OneDriveBlockedIPsValue:     "0.0.0.0,127.0.0.1",
-				OneDriveReplaceDictValue:    `{"$upstream":"$custom_domain"}`,
-				SakuyaOneDriveBaseURL:       "http://127.0.0.1:3201",
-				SakuyaOneDriveHealthURL:     "http://127.0.0.1:3201/_hazuki/health",
-				SakuyaOneDriveStatus:        serviceStatus{Status: "disabled"},
 			},
 		},
 		{

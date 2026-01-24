@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"hazuki-go/internal/metrics"
 	"hazuki-go/internal/model"
-	"hazuki-go/internal/proxy/sakuyaodproxy"
 	"hazuki-go/internal/proxy/sakuyaproxy"
 )
 
@@ -24,19 +22,10 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 	var oplistRuntime atomic.Value
 	oplistRuntime.Store(sakuyaproxy.RuntimeConfig{Host: "0.0.0.0", Port: env.initialCfg.Ports.Sakuya})
 
-	var oneDriveRuntime atomic.Value
-	oneDriveRuntime.Store(sakuyaodproxy.RuntimeConfig{Host: "0.0.0.0", Port: env.initialCfg.Ports.SakuyaOneDrive})
-
 	buildOplistRuntime := func(cfg model.AppConfig, fallbackPort int) (sakuyaproxy.RuntimeConfig, error) {
 		tmp := cfg
 		tmp.Ports.Sakuya = fallbackPort
 		return sakuyaproxy.BuildRuntimeConfig(tmp)
-	}
-
-	buildOneDriveRuntime := func(cfg model.AppConfig, fallbackPort int) (sakuyaodproxy.RuntimeConfig, error) {
-		tmp := cfg
-		tmp.Ports.SakuyaOneDrive = fallbackPort
-		return sakuyaodproxy.BuildRuntimeConfig(tmp)
 	}
 
 	isOplistEnabled := func(cfg model.AppConfig) bool {
@@ -50,22 +39,9 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 		return true
 	}
 
-	isOneDriveEnabled := func(cfg model.AppConfig) bool {
-		if cfg.Sakuya.OneDrive.Disabled {
-			return false
-		}
-		if strings.TrimSpace(cfg.Sakuya.OneDrive.Upstream) == "" {
-			return false
-		}
-		return true
-	}
-
 	stateMu := &sync.Mutex{}
 	var oplistServer *http.Server
 	oplistPort := 0
-
-	var oneDriveServer *http.Server
-	oneDrivePort := 0
 
 	stopOplistServerLocked := func(shutdownCtx context.Context) {
 		if oplistServer == nil {
@@ -74,15 +50,6 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 		_ = oplistServer.Shutdown(shutdownCtx)
 		oplistServer = nil
 		oplistPort = 0
-	}
-
-	stopOneDriveServerLocked := func(shutdownCtx context.Context) {
-		if oneDriveServer == nil {
-			return
-		}
-		_ = oneDriveServer.Shutdown(shutdownCtx)
-		oneDriveServer = nil
-		oneDrivePort = 0
 	}
 
 	startOplistServerLocked := func(port int) {
@@ -117,38 +84,6 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 		oplistPort = port
 	}
 
-	startOneDriveServerLocked := func(port int) {
-		if port < 1 || port > 65535 {
-			return
-		}
-		if oneDriveServer != nil {
-			return
-		}
-
-		var h http.Handler = sakuyaodproxy.NewHandler(sakuyaodproxy.HandlerOptions{
-			GetRuntime: func() sakuyaodproxy.RuntimeConfig {
-				return oneDriveRuntime.Load().(sakuyaodproxy.RuntimeConfig)
-			},
-		})
-		h = metrics.Wrap(env.metrics.Service("sakuya_onedrive"), h)
-
-		srv := &http.Server{
-			Addr:              fmt.Sprintf("0.0.0.0:%d", port),
-			Handler:           h,
-			ReadHeaderTimeout: 10 * time.Second,
-		}
-		started, err := listenAndServe("sakuya_onedrive", srv, false, nil)
-		if err != nil {
-			log.Printf("sakuya_onedrive: start failed: %v", err)
-			return
-		}
-		if !started {
-			return
-		}
-		oneDriveServer = srv
-		oneDrivePort = port
-	}
-
 	applyCfgLocked := func(cfg model.AppConfig) {
 		if !isOplistEnabled(cfg) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -175,34 +110,6 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 				}
 			}
 		}
-
-		if !isOneDriveEnabled(cfg) {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			stopOneDriveServerLocked(shutdownCtx)
-			cancel()
-			return
-		}
-
-		port := cfg.Ports.SakuyaOneDrive
-		if oneDrivePort != 0 {
-			port = oneDrivePort
-		}
-
-		next, err := buildOneDriveRuntime(cfg, port)
-		if err != nil {
-			log.Printf("sakuya_onedrive: config update ignored: %v", err)
-			return
-		}
-
-		if oneDrivePort != 0 && next.Port != oneDrivePort {
-			log.Printf("sakuya_onedrive: port change requires restart (%d -> %d)", oneDrivePort, next.Port)
-			next.Port = oneDrivePort
-		}
-
-		oneDriveRuntime.Store(next)
-		if oneDriveServer == nil {
-			startOneDriveServerLocked(next.Port)
-		}
 	}
 
 	apply := func(cfg model.AppConfig) {
@@ -226,7 +133,6 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 			stateMu.Lock()
 			defer stateMu.Unlock()
 			stopOplistServerLocked(shutdownCtx)
-			stopOneDriveServerLocked(shutdownCtx)
 			return nil
 		},
 	}, nil
