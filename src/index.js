@@ -1,4 +1,7 @@
 /* eslint-disable no-console */
+/**
+ * NOTE: 旧实现（维护模式）。当前部署与使用方式请看仓库根目录 README（部署文件在 `go/` 目录）。
+ */
 "use strict";
 
 require("dotenv").config();

@@ -1,3 +1,4 @@
+# NOTE: 这是旧实现（维护模式）。当前部署请使用 `go/docker-compose.yml`。
 services:
   redis:
     image: redis:7-alpine

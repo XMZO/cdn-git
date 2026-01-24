@@ -1,3 +1,4 @@
+# NOTE: 这是旧实现（维护模式）。当前部署请使用 `go/` 目录下的 Dockerfile / docker-compose.yml。
 FROM node:20-bookworm-slim
 
 WORKDIR /app

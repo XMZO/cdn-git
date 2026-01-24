@@ -6,9 +6,16 @@
   </a>
 </p>
 
-Hazuki 是一个 **单进程多端口** 的代理套件：内置 SQLite 配置中心 + Web 面板（热更新/版本回滚/导入导出/状态检测），把常用的几个代理能力做成可配置模块。
+Hazuki 是一个 **单进程多端口** 的代理套件：内置 SQLite 配置中心 + Web 管理面板，把常用的反代能力做成可配置模块并组合使用。
+
+- Web 面板：配置管理、版本回滚、导入/导出备份、服务状态/健康检查、流量统计
+- 热更新：大部分配置保存后立即生效；**端口变更需要重启进程/容器**
+- 可选落盘加密：通过 `HAZUKI_MASTER_KEY` 加密保存敏感字段（支持在面板轮换）
+- 模块：Torcherino / cdnjs / Git / Sakuya（Oplist）
 
 ## 快速部署（Docker Compose）
+
+部署文件在 `go/` 目录：
 
 ```bash
 cd go
@@ -19,18 +26,20 @@ docker compose up -d --build
 启动后打开：
 
 - 面板：`http://你的服务器:3100`
+- 首次初始化：`http://你的服务器:3100/setup`
 - 快速向导：`http://你的服务器:3100/wizard`
 - 系统状态：`http://你的服务器:3100/system`
+- 流量统计：`http://你的服务器:3100/traffic`
 
-> 配置除端口外会热更新立即生效；端口修改需要重启进程/容器。
+> 提示：敏感字段在面板里通常会被“留空=保持不变”的方式保护；如需清除请使用对应的 “clear/清除” 选项。
 
 ## 默认端口
 
 - `3100`：Admin 面板
 - `3000`：Torcherino（通用反代）
-- `3001`：Cdnjs（jsDelivr 缓存代理，Redis 缓存）
-- `3002`：Git（GitHub Raw 代理，支持 Token/CORS/替换规则）
-- `3200`：Sakuya · Oplist（OpenList 直链加速）
+- `3001`：cdnjs（jsDelivr 缓存代理，Redis 可选）
+- `3002`：Git（GitHub Raw 代理，可新增多实例）
+- `3200`：Sakuya（Oplist / OpenList 直链加速）
 
 ## 健康检查
 
@@ -38,15 +47,46 @@ docker compose up -d --build
 - torcherino：`http://HOST:3000/_hazuki/health`
 - cdnjs：`http://HOST:3001/_hazuki/health`
 - git：`http://HOST:3002/_hazuki/health`
-- sakuya (oplist)：`http://HOST:3200/_hazuki/health`
+- sakuya：`http://HOST:3200/_hazuki/health`
+
+## 模块说明（简要）
+
+- **Torcherino**：通用反代，支持 `HOST_MAPPING` 域名映射；可选 Worker Secret Header 注入
+- **cdnjs**：面向 `jsDelivr` 的缓存代理；Redis 可选但推荐；缓存 TTL 以文件后缀为主，可在面板配置默认值与覆盖表
+- **Git**：GitHub Raw 代理；支持 Token、CORS、Cache-Control 策略、替换规则；可在面板新增多实例（需要额外暴露端口）
+- **Sakuya（Oplist）**：对接 OpenList / Oplist 的直链加速
 
 ## 配置与账号
 
-- 首次启动会用 `go/.env` 做一次 seed；之后以 SQLite 为准（DB 默认 `go/data/hazuki.db`；Docker Compose 会 bind mount 到 `go/data/`）。
-- 第一次访问会引导到 `http://你的服务器:3100/setup` 创建管理员；也可在 `go/.env` 里提前设置 `HAZUKI_ADMIN_USERNAME` / `HAZUKI_ADMIN_PASSWORD`（仅第一次生效）。
-- 如需敏感配置落盘加密：设置 `HAZUKI_MASTER_KEY`（面板 `/system` 支持轮换）。
+- 首次启动会读取 `go/.env` 并写入 SQLite（仅 DB 为空时生效）；之后以 SQLite 为准，建议用 Web 面板管理。
+- 第一次访问会引导到 `http://你的服务器:3100/setup` 创建管理员；也可在 `go/.env` 里提前设置 `HAZUKI_ADMIN_USERNAME` / `HAZUKI_ADMIN_PASSWORD`（仅首次生效）。
+- `HAZUKI_MASTER_KEY` 用于敏感字段加密存储。已存在 `enc:v1:...` 数据时，启动必须提供同一个 key；轮换请在 `/system` 执行，以确保数据库内容重加密并同步更新环境变量。
+- Redis：Docker Compose 默认包含 Redis；如果你不用 Docker，请自行部署 Redis 并设置 `REDIS_HOST`/`REDIS_PORT`（也可在面板里改）。
 
-更详细的模块说明与配置项：见 `go/README.md`。
+## 备份（导出/导入）
+
+面板支持把数据库导出为 `.hzdb` 文件，并在导入时覆盖当前数据库内容：
+
+- 导出：`/config/export`
+- 导入：`/config/import`
+
+## 本地运行（不使用 Docker）
+
+要求：Go 1.24+
+
+```bash
+cd go
+cp .env.example .env
+go run ./cmd/hazuki
+```
+
+或编译：
+
+```bash
+cd go
+go build -trimpath -ldflags "-s -w" -o hazuki-go ./cmd/hazuki
+./hazuki-go
+```
 
 ## Nginx 反代示例（以 cdnjs 为例）
 
@@ -61,14 +101,12 @@ location / {
 ## 仓库结构
 
 ```
-├── go/            # Hazuki 主程序（推荐）
-├── src/           # 旧实现（维护模式，仅保留兼容）
+├── go/            # 主程序与部署文件
+├── src/           # 旧实现（维护模式，仅保留兼容/参考）
 ├── cdnjs/         # 旧：独立版本（参考）
 ├── git/           # 旧：独立版本（参考）
 └── torcherino/    # 旧：独立版本（参考）
 ```
-
-> 根目录的 `Dockerfile` / `docker-compose.yml` 对应旧实现；推荐使用 `go/` 目录下的部署文件。
 
 ## License
 
