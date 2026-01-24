@@ -114,51 +114,86 @@ func Wrap(svc *Service, next http.Handler) http.Handler {
 
 		var bodyCounter *countingReadCloser
 		if r != nil && r.Body != nil {
-			bodyCounter = &countingReadCloser{ReadCloser: r.Body}
+			bodyCounter = &countingReadCloser{ReadCloser: r.Body, svc: svc}
 			r.Body = bodyCounter
 		}
 
-		crw := &countingResponseWriter{ResponseWriter: w}
+		crw := &countingResponseWriter{ResponseWriter: w, svc: svc}
 		next.ServeHTTP(crw, r)
-
-		if bodyCounter != nil {
-			svc.bytesIn.Add(bodyCounter.n)
-		}
-		svc.bytesOut.Add(crw.n)
 	})
 }
 
 type countingReadCloser struct {
 	io.ReadCloser
+	svc *Service
 	n int64
 }
 
 func (c *countingReadCloser) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
-	c.n += int64(n)
+	if n > 0 {
+		c.n += int64(n)
+		if c.svc != nil {
+			c.svc.bytesIn.Add(int64(n))
+		}
+	}
 	return n, err
 }
 
+const copyBufSize = 32 * 1024
+
+var copyBufPool = sync.Pool{New: func() any { return make([]byte, copyBufSize) }}
+
 type countingResponseWriter struct {
 	http.ResponseWriter
+	svc *Service
 	n int64
 }
 
 func (w *countingResponseWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
-	w.n += int64(n)
+	if n > 0 {
+		w.n += int64(n)
+		if w.svc != nil {
+			w.svc.bytesOut.Add(int64(n))
+		}
+	}
 	return n, err
 }
 
 func (w *countingResponseWriter) ReadFrom(r io.Reader) (int64, error) {
-	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
-		n, err := rf.ReadFrom(r)
-		w.n += n
-		return n, err
+	if r == nil {
+		return 0, nil
 	}
-	n, err := io.Copy(w.ResponseWriter, r)
-	w.n += n
-	return n, err
+	buf := copyBufPool.Get().([]byte)
+	defer copyBufPool.Put(buf)
+
+	var total int64
+	for {
+		nr, er := r.Read(buf)
+		if nr > 0 {
+			nw, ew := w.ResponseWriter.Write(buf[:nr])
+			if nw > 0 {
+				total += int64(nw)
+				w.n += int64(nw)
+				if w.svc != nil {
+					w.svc.bytesOut.Add(int64(nw))
+				}
+			}
+			if ew != nil {
+				return total, ew
+			}
+			if nw != nr {
+				return total, io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			if er == io.EOF {
+				return total, nil
+			}
+			return total, er
+		}
+	}
 }
 
 func (w *countingResponseWriter) Flush() {
