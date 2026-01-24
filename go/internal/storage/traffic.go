@@ -295,7 +295,7 @@ ORDER BY start_ts ASC;
 SELECT start_ts, SUM(bytes_in), SUM(bytes_out), SUM(requests)
 FROM traffic_buckets
 WHERE kind = ? AND start_ts >= ? AND start_ts <= ?
-  AND (service = 'torcherino' OR service = 'cdnjs' OR service = 'git' OR service LIKE 'git:%')
+  AND (service = 'torcherino' OR service = 'cdnjs' OR service = 'git' OR service LIKE 'git:%' OR service = 'sakuya')
 GROUP BY start_ts
 ORDER BY start_ts ASC;
 `
@@ -367,7 +367,7 @@ func GetTrafficMinBucketStartTS(ctx context.Context, db *sql.DB, kind string, se
 SELECT MIN(start_ts)
 FROM traffic_buckets
 WHERE kind = ?
-  AND (service = 'torcherino' OR service = 'cdnjs' OR service = 'git' OR service LIKE 'git:%');
+  AND (service = 'torcherino' OR service = 'cdnjs' OR service = 'git' OR service LIKE 'git:%' OR service = 'sakuya');
 `
 		args = []any{kind}
 	case "exact":

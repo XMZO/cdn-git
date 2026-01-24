@@ -1538,6 +1538,8 @@ func (s *server) trafficSeries(w http.ResponseWriter, r *http.Request) {
 		sel = storage.TrafficServiceSelector{Mode: "exact", Service: "cdnjs"}
 	case "git":
 		sel = storage.TrafficServiceSelector{Mode: "prefix", Service: "git"}
+	case "sakuya":
+		sel = storage.TrafficServiceSelector{Mode: "exact", Service: "sakuya"}
 	case "admin":
 		sel = storage.TrafficServiceSelector{Mode: "exact", Service: "admin"}
 	default:
