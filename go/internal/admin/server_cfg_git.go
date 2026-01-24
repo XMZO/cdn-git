@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 
 	"hazuki-go/internal/model"
@@ -388,4 +391,176 @@ func (s *server) configGit(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.Redirect(w, r, "/config/git?ok=1", http.StatusFound)
 	}
+}
+
+func (s *server) renderGitForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, instanceID, notice, errMsg, gitPortValue, replaceDictRaw string) {
+	instanceID = strings.TrimSpace(instanceID)
+	isDefault := instanceID == "" || strings.EqualFold(instanceID, "default")
+
+	defaultName := s.t(r, "common.default")
+
+	currentID := ""
+	currentName := defaultName
+	currentPort := cfg.Ports.Git
+	currentPortKey := "ports.git"
+	currentCfg := cfg.Git
+	currentEnabled := !cfg.Git.Disabled
+
+	if !isDefault {
+		found := false
+		for _, it := range cfg.GitInstances {
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				continue
+			}
+			if !strings.EqualFold(id, instanceID) {
+				continue
+			}
+
+			currentID = id
+			currentName = strings.TrimSpace(it.Name)
+			if currentName == "" {
+				currentName = id
+			}
+			currentPort = it.Port
+			currentPortKey = "gitInstances." + id + ".port"
+			currentCfg = it.Git
+			currentEnabled = !it.Git.Disabled
+			found = true
+			break
+		}
+
+		if !found {
+			if strings.TrimSpace(errMsg) == "" {
+				errMsg = s.t(r, "error.git.instanceNotFound", instanceID)
+			}
+			isDefault = true
+			instanceID = ""
+		}
+	}
+
+	if isDefault {
+		currentID = ""
+		currentName = defaultName
+		currentPort = cfg.Ports.Git
+		currentPortKey = "ports.git"
+		currentCfg = cfg.Git
+		currentEnabled = !cfg.Git.Disabled
+	}
+
+	replaceDictJSON := ""
+	if strings.TrimSpace(replaceDictRaw) != "" {
+		replaceDictJSON = replaceDictRaw
+	} else {
+		pretty, _ := json.MarshalIndent(currentCfg.ReplaceDict, "", "  ")
+		replaceDictJSON = string(pretty)
+	}
+
+	authScheme := currentCfg.GithubAuthScheme
+	if strings.TrimSpace(authScheme) == "" {
+		authScheme = "token"
+	}
+
+	gitBaseURL := baseURLForPort(r, currentPort)
+	gitSt := func() serviceStatus {
+		if !currentEnabled {
+			return disabledServiceStatus(currentPort)
+		}
+		return checkServiceStatus(r.Context(), currentPort)
+	}()
+
+	if strings.TrimSpace(gitPortValue) == "" {
+		gitPortValue = strconv.Itoa(currentPort)
+	}
+
+	instances := make([]gitInstanceRow, 0, 1+len(cfg.GitInstances))
+	instances = append(instances, func() gitInstanceRow {
+		port := cfg.Ports.Git
+		baseURL := baseURLForPort(r, port)
+		enabled := !cfg.Git.Disabled
+		st := func() serviceStatus {
+			if !enabled {
+				return disabledServiceStatus(port)
+			}
+			return checkServiceStatus(r.Context(), port)
+		}()
+		return gitInstanceRow{
+			ID:        "default",
+			Name:      defaultName,
+			Port:      port,
+			Enabled:   enabled,
+			BaseURL:   baseURL,
+			HealthURL: "/_hazuki/health/git",
+			Status:    st,
+		}
+	}())
+
+	if len(cfg.GitInstances) > 0 {
+		sorted := append([]model.GitInstanceConfig(nil), cfg.GitInstances...)
+		sort.Slice(sorted, func(i, j int) bool {
+			return strings.ToLower(strings.TrimSpace(sorted[i].ID)) < strings.ToLower(strings.TrimSpace(sorted[j].ID))
+		})
+
+		for _, it := range sorted {
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				continue
+			}
+			baseURL := baseURLForPort(r, it.Port)
+			enabled := !it.Git.Disabled
+			st := func() serviceStatus {
+				if !enabled {
+					return disabledServiceStatus(it.Port)
+				}
+				return checkServiceStatus(r.Context(), it.Port)
+			}()
+
+			name := strings.TrimSpace(it.Name)
+			if name == "" {
+				name = id
+			}
+			instances = append(instances, gitInstanceRow{
+				ID:        id,
+				Name:      name,
+				Port:      it.Port,
+				Enabled:   enabled,
+				BaseURL:   baseURL,
+				HealthURL: "/_hazuki/health/git/" + url.PathEscape(id),
+				Status:    st,
+			})
+		}
+	}
+
+	gitHealthURL := "/_hazuki/health/git"
+	if strings.TrimSpace(currentID) != "" {
+		gitHealthURL = "/_hazuki/health/git/" + url.PathEscape(strings.TrimSpace(currentID))
+	}
+
+	s.render(w, r, gitData{
+		layoutData: layoutData{
+			Title:        s.t(r, "page.git.title"),
+			BodyTemplate: "git",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Notice:       notice,
+			Error:        errMsg,
+		},
+		Git:               currentCfg,
+		GitPort:           currentPort,
+		GitPortValue:      gitPortValue,
+		GitPortKey:        currentPortKey,
+		GitEnabled:        currentEnabled,
+		TokenIsSet:        strings.TrimSpace(currentCfg.GithubToken) != "",
+		AuthScheme:        authScheme,
+		BlockedRegionsCsv: strings.Join(currentCfg.BlockedRegions, ","),
+		BlockedIPsCsv:     strings.Join(currentCfg.BlockedIpAddresses, ","),
+		ReplaceDictJson:   replaceDictJSON,
+		GitBaseURL:        gitBaseURL,
+		GitHealthURL:      gitHealthURL,
+		GitStatus:         gitSt,
+
+		CurrentInstanceID:   currentID,
+		CurrentInstanceName: currentName,
+		Instances:           instances,
+	})
 }

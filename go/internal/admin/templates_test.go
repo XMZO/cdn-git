@@ -178,8 +178,8 @@ func TestTemplatesRender(t *testing.T) {
 		{
 			name: "export",
 			data: exportData{
-				layoutData:      layoutData{Title: "下载备份", BodyTemplate: "export", User: adminUser, HasUsers: true},
-				MasterKeyIsSet:  true,
+				layoutData:     layoutData{Title: "下载备份", BodyTemplate: "export", User: adminUser, HasUsers: true},
+				MasterKeyIsSet: true,
 			},
 		},
 		{

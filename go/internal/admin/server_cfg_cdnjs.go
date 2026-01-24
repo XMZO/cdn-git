@@ -1,12 +1,15 @@
 package admin
 
 import (
+	"encoding/json"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"hazuki-go/internal/model"
+	"hazuki-go/internal/proxy/cdnjsproxy"
 	"hazuki-go/internal/storage"
 )
 
@@ -196,4 +199,78 @@ func (s *server) configCdnjs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/config/cdnjs?ok=1", http.StatusFound)
+}
+
+func (s *server) renderCdnjsForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, cdnjsPortValue, ghUserPolicyValue, allowedUsersCsv, blockedUsersCsv, redisPortValue, defaultTTLValue, ttlOverridesValue string) {
+	if strings.TrimSpace(cdnjsPortValue) == "" {
+		cdnjsPortValue = strconv.Itoa(cfg.Ports.Cdnjs)
+	}
+	if strings.TrimSpace(ghUserPolicyValue) == "" {
+		ghUserPolicyValue = strings.TrimSpace(cfg.Cdnjs.GhUserPolicy)
+	}
+	ghUserPolicyValue = strings.ToLower(strings.TrimSpace(ghUserPolicyValue))
+	if ghUserPolicyValue == "" {
+		ghUserPolicyValue = "allowlist"
+	}
+	if strings.TrimSpace(allowedUsersCsv) == "" {
+		allowedUsersCsv = strings.Join(cfg.Cdnjs.AllowedGhUsers, ",")
+	}
+	if strings.TrimSpace(blockedUsersCsv) == "" {
+		blockedUsersCsv = strings.Join(cfg.Cdnjs.BlockedGhUsers, ",")
+	}
+	if strings.TrimSpace(redisPortValue) == "" {
+		redisPortValue = strconv.Itoa(cfg.Cdnjs.Redis.Port)
+	}
+	if strings.TrimSpace(defaultTTLValue) == "" {
+		if cfg.Cdnjs.DefaultTTLSeconds > 0 {
+			defaultTTLValue = strconv.Itoa(cfg.Cdnjs.DefaultTTLSeconds)
+		}
+	}
+	if strings.TrimSpace(ttlOverridesValue) == "" {
+		ttlOverridesValue = formatTTLOverrides(cfg.Cdnjs.CacheTTLSeconds)
+	}
+
+	effectiveDefaultTTL, effectiveTTLMap := cdnjsproxy.EffectiveCacheTTLConfig(cfg.Cdnjs)
+	type ttlPreview struct {
+		DefaultTTLSeconds int            `json:"defaultTTLSeconds"`
+		TTLByExt          map[string]int `json:"ttlByExt"`
+	}
+	ttlPreviewJSON, _ := json.Marshal(ttlPreview{
+		DefaultTTLSeconds: effectiveDefaultTTL,
+		TTLByExt:          effectiveTTLMap,
+	})
+
+	cdnjsBaseURL := baseURLForPort(r, cfg.Ports.Cdnjs)
+	redisSt := checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
+	cdnjsSt := func() serviceStatus {
+		if cfg.Cdnjs.Disabled {
+			return disabledServiceStatus(cfg.Ports.Cdnjs)
+		}
+		return checkServiceStatus(r.Context(), cfg.Ports.Cdnjs)
+	}()
+
+	s.render(w, r, cdnjsData{
+		layoutData: layoutData{
+			Title:        s.t(r, "page.cdnjs.title"),
+			BodyTemplate: "cdnjs",
+			User:         st.User,
+			HasUsers:     st.HasUsers,
+			Notice:       notice,
+			Error:        errMsg,
+		},
+		Cdnjs:             cfg.Cdnjs,
+		CdnjsPort:         cfg.Ports.Cdnjs,
+		CdnjsPortValue:    cdnjsPortValue,
+		GhUserPolicyValue: ghUserPolicyValue,
+		AllowedUsersCsv:   allowedUsersCsv,
+		BlockedUsersCsv:   blockedUsersCsv,
+		RedisPortValue:    redisPortValue,
+		DefaultTTLValue:   defaultTTLValue,
+		TTLOverridesValue: ttlOverridesValue,
+		TTLEffectiveJSON:  template.JS(string(ttlPreviewJSON)),
+		CdnjsBaseURL:      cdnjsBaseURL,
+		CdnjsHealthURL:    "/_hazuki/health/cdnjs",
+		RedisStatus:       redisSt,
+		CdnjsStatus:       cdnjsSt,
+	})
 }
