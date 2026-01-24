@@ -31,7 +31,6 @@ docker compose up -d --build
 - `3001`：Cdnjs（jsDelivr 缓存代理，Redis 缓存）
 - `3002`：Git（GitHub Raw 代理，支持 Token/CORS/替换规则）
 - `3200`：Sakuya · Oplist（OpenList 直链加速）
-- `3201`：Sakuya · OneDrive（OneDrive/SharePoint 反代）
 
 ## 健康检查
 
@@ -40,7 +39,6 @@ docker compose up -d --build
 - cdnjs：`http://HOST:3001/_hazuki/health`
 - git：`http://HOST:3002/_hazuki/health`
 - sakuya (oplist)：`http://HOST:3200/_hazuki/health`
-- sakuya (onedrive)：`http://HOST:3201/_hazuki/health`
 
 ## 配置与账号
 
