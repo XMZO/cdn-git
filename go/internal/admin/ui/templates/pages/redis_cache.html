@@ -1,5 +1,5 @@
 {{define "redis_cache"}}
-  <div class="grid">
+  <div class="grid hz-redis-cache">
     <div class="card">
       <h2>{{.Title}}</h2>
       <div class="muted small">{{.T "redisCache.subtitle"}}</div>
@@ -90,9 +90,9 @@
                   <tr>
                     <td>
                       {{if .URL}}
-                        <code style="max-width:520px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:inline-block;">{{.URL}}</code>
+                        <code class="hz-ellipsis hz-copy" title="{{.URL}}" data-hz-copy="1">{{.URL}}</code>
                       {{else}}
-                        <code style="opacity:0.7">{{.ID}}</code>
+                        <code class="hz-copy" style="opacity:0.7" title="{{.ID}}" data-hz-copy="1">{{.ID}}</code>
                       {{end}}
                     </td>
                     <td>{{if .Type}}<code>{{.Type}}</code>{{else}}-{{end}}</td>
@@ -129,4 +129,3 @@
     {{end}}
   </div>
 {{end}}
-

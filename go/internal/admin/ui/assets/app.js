@@ -1511,6 +1511,69 @@
     });
   };
 
+  const copyText = async (raw) => {
+    const text = (raw || "").toString();
+    if (!text) return false;
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "true");
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      el.style.top = "0";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+
+      el.focus();
+      el.select();
+      el.setSelectionRange(0, el.value.length);
+
+      const ok = document.execCommand && document.execCommand("copy");
+      document.body.removeChild(el);
+      return !!ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const copyTimers = new WeakMap();
+  const flashCopied = (el) => {
+    if (!(el instanceof Element)) return;
+
+    const prev = copyTimers.get(el);
+    if (prev) clearTimeout(prev);
+
+    el.classList.add("hz-copied");
+    const t = setTimeout(() => {
+      el.classList.remove("hz-copied");
+      copyTimers.delete(el);
+    }, 900);
+    copyTimers.set(el, t);
+  };
+
+  const onCopyClick = (e) => {
+    const el = e.target instanceof Element ? e.target.closest("[data-hz-copy]") : null;
+    if (!el) return;
+
+    const text = (el.textContent || "").trim();
+    if (!text) return;
+
+    copyText(text).then((ok) => {
+      if (!ok) return;
+      flashCopied(el);
+    });
+  };
+
   const onLinkClick = (e) => {
     if (e.defaultPrevented) return;
     if (e.button !== 0) return;
@@ -1582,6 +1645,7 @@
   document.addEventListener("click", onFormatJsonClick);
   document.addEventListener("change", onTogglePassword);
   document.addEventListener("click", onConfirmSubmitClick);
+  document.addEventListener("click", onCopyClick);
   document.addEventListener("click", onLinkClick);
   document.addEventListener("input", onPreviewInput);
   document.addEventListener("change", onPreviewInput);

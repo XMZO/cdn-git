@@ -663,6 +663,30 @@ table.table {
   font-weight: 900;
 }
 
+.hz-redis-cache .table th,
+.hz-redis-cache .table td {
+  white-space: nowrap;
+}
+
+.hz-ellipsis {
+  max-width: min(720px, 52vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.hz-copy {
+  cursor: copy;
+  user-select: all;
+}
+
+.hz-copy.hz-copied {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+}
+
 @media (prefers-color-scheme: light) {
   .table th,
   .table td {
