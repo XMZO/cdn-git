@@ -39,7 +39,7 @@ docker compose up -d --build
 - `3000`：Torcherino（通用反代）
 - `3001`：cdnjs（jsDelivr 缓存代理，Redis 可选）
 - `3002`：Git（GitHub Raw 代理，可新增多实例）
-- `3200`：Sakuya（Oplist / OpenList 直链加速）
+- `3200`：Sakuya（OpenList 直链加速）
 
 ## 健康检查
 
