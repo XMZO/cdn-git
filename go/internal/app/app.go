@@ -67,6 +67,7 @@ func Run(ctx context.Context) error {
 	fatalErrCh := make(chan error, 1)
 	modules := []module{
 		trafficModule{},
+		dbMaintenanceModule{},
 		adminModule{},
 		torcherinoModule{},
 		sakuyaModule{},
