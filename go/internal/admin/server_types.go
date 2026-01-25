@@ -147,6 +147,7 @@ type sakuyaOplistData struct {
 	TokenIsSet bool
 	TokenValue string
 
+	SakuyaEnabled  bool
 	ServiceEnabled bool
 
 	IgnoreDuplicatePrefix bool

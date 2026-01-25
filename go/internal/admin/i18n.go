@@ -90,6 +90,8 @@ func init() {
 		"error.sakuya.instanceNotFound": "Sakuya：实例不存在：%s",
 
 		"sakuya.serviceToggleHint": "未启用时不会监听端口；保存后立即生效。",
+		"sakuya.globalLabel":       "总开关（暂停/启用）",
+		"sakuya.globalHint":        "关闭后 Sakuya 会停止监听端口，所有实例暂停；各实例配置与开关会保留。",
 
 		"sakuya.oplist.tagline":        "（OpenList 直链加速）",
 		"sakuya.oplist.subtitle":       "验证 sign 并调用 OpenList /api/fs/link 获取直链后转发下载；会按 Worker 行为处理 CORS/缓存头/重定向。",
@@ -688,6 +690,8 @@ func init() {
 		"error.sakuya.instanceNotFound": "Sakuya: instance not found: %s",
 
 		"sakuya.serviceToggleHint": "When disabled, the service stops listening immediately.",
+		"sakuya.globalLabel":       "Global switch (pause/enable)",
+		"sakuya.globalHint":        "When disabled, Sakuya stops listening and all instances are paused; instance configs/toggles are preserved.",
 
 		"sakuya.oplist.tagline":        "OpenList link accelerator",
 		"sakuya.oplist.subtitle":       "Validates sign, calls OpenList /api/fs/link, then proxies the download with Worker-compatible CORS/cache/redirect behavior.",

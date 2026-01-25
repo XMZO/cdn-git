@@ -89,7 +89,6 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
-				next.Sakuya.Disabled = false
 				next.Sakuya.Instances = append(next.Sakuya.Instances, model.SakuyaOplistInstance{
 					ID:       newID,
 					Name:     name,
@@ -147,16 +146,19 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 	instanceID = strings.TrimSpace(r.FormValue("instanceID"))
 	isInstance := instanceID != ""
 
+	globalEnabledFallback := !cfg.Sakuya.Disabled
+	globalEnabled := parseBool(r.FormValue("sakuyaEnabled"), globalEnabledFallback)
+
 	curEnabled := false
 	if isInstance {
 		for _, it := range cfg.Sakuya.Instances {
 			if strings.EqualFold(strings.TrimSpace(it.ID), instanceID) {
-				curEnabled = !cfg.Sakuya.Disabled && !it.Disabled
+				curEnabled = !it.Disabled
 				break
 			}
 		}
 	} else {
-		curEnabled = !cfg.Sakuya.Disabled && !cfg.Sakuya.Oplist.Disabled
+		curEnabled = !cfg.Sakuya.Oplist.Disabled
 	}
 	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), curEnabled)
 
@@ -182,7 +184,7 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 		tokenIsSet = strings.TrimSpace(cfg.Sakuya.Oplist.Token) != ""
 	}
 
-	if serviceEnabled {
+	if globalEnabled && serviceEnabled {
 		if isInstance && prefix == "" {
 			s.renderSakuyaOplistForm(w, r, st, cfg, instanceID, "", s.t(r, "error.sakuya.prefixRequired"), r.FormValue("sakuyaPort"), prefix, address, publicURL, "", ignoreDup)
 			return
@@ -208,7 +210,7 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isInstance && !ignoreDup && hasSakuyaPrefixDup(cfg, instanceID, prefix) {
+	if globalEnabled && serviceEnabled && isInstance && !ignoreDup && hasSakuyaPrefixDup(cfg, instanceID, prefix) {
 		s.renderSakuyaOplistForm(w, r, st, cfg, instanceID, "", s.t(r, "error.sakuya.prefixDuplicated", prefix), portRaw, prefix, address, publicURL, "", ignoreDup)
 		return
 	}
@@ -231,7 +233,7 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 		Updater: func(cur model.AppConfig) (model.AppConfig, error) {
 			next := cur
 			next.Ports.Sakuya = port
-			next.Sakuya.Disabled = false
+			next.Sakuya.Disabled = !globalEnabled
 			if isInstance {
 				found := false
 				for i := range next.Sakuya.Instances {
@@ -269,7 +271,7 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Ports.Sakuya = port
-		draft.Sakuya.Disabled = false
+		draft.Sakuya.Disabled = !globalEnabled
 		if isInstance {
 			for i := range draft.Sakuya.Instances {
 				if strings.EqualFold(strings.TrimSpace(draft.Sakuya.Instances[i].ID), instanceID) {
@@ -322,6 +324,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 	currentName := s.t(r, "common.default")
 	currentPrefix := ""
 	currentEnabled := false
+	sakuyaEnabledFallback := !cfg.Sakuya.Disabled
 	currentAddr := ""
 	currentPubURL := ""
 	currentTokenIsSet := false
@@ -330,7 +333,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 		currentID = ""
 		currentName = s.t(r, "common.default")
 		currentPrefix = ""
-		currentEnabled = !cfg.Sakuya.Disabled && !cfg.Sakuya.Oplist.Disabled
+		currentEnabled = !cfg.Sakuya.Oplist.Disabled
 		currentAddr = cfg.Sakuya.Oplist.Address
 		currentPubURL = cfg.Sakuya.Oplist.PublicURL
 		currentTokenIsSet = strings.TrimSpace(cfg.Sakuya.Oplist.Token) != ""
@@ -351,7 +354,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 				currentName = id
 			}
 			currentPrefix = strings.TrimSpace(it.Prefix)
-			currentEnabled = !cfg.Sakuya.Disabled && !it.Disabled
+			currentEnabled = !it.Disabled
 			currentAddr = it.Address
 			currentPubURL = it.PublicURL
 			currentTokenIsSet = strings.TrimSpace(it.Token) != ""
@@ -365,7 +368,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 			currentID = ""
 			currentName = s.t(r, "common.default")
 			currentPrefix = ""
-			currentEnabled = !cfg.Sakuya.Disabled && !cfg.Sakuya.Oplist.Disabled
+			currentEnabled = !cfg.Sakuya.Oplist.Disabled
 			currentAddr = cfg.Sakuya.Oplist.Address
 			currentPubURL = cfg.Sakuya.Oplist.PublicURL
 			currentTokenIsSet = strings.TrimSpace(cfg.Sakuya.Oplist.Token) != ""
@@ -497,6 +500,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 		TokenIsSet: currentTokenIsSet,
 		TokenValue: strings.TrimSpace(oplistTokenValue),
 
+		SakuyaEnabled:  parseBool(r.FormValue("sakuyaEnabled"), sakuyaEnabledFallback),
 		ServiceEnabled: currentEnabled,
 
 		IgnoreDuplicatePrefix: ignoreDup,

@@ -90,6 +90,14 @@
       <input type="hidden" name="instanceID" value="{{.CurrentInstanceID}}" />
       <div class="card">
         <h3>{{.T "common.basicConfig"}}</h3>
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="sakuyaEnabled" {{if .SakuyaEnabled}}checked{{end}} />
+            <input type="hidden" name="sakuyaEnabled" value="0" />
+            {{.T "sakuya.globalLabel"}} <span class="key">sakuya.disabled</span>
+          </label>
+          <div class="hint">{{.T "sakuya.globalHint"}}</div>
+        </div>
         <div class="grid cols-2">
           <div class="field">
             <label>{{.T "common.port"}} <span class="key">ports.sakuya</span></label>
