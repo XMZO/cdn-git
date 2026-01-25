@@ -544,6 +544,7 @@ body.hz-modal-open {
   color: inherit;
   cursor: pointer;
   text-decoration: none;
+  user-select: none;
 }
 
 @media (prefers-color-scheme: light) {
@@ -769,6 +770,11 @@ table.table {
 }
 
 .hz-copy.hz-copied {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.btn.hz-copied {
   border-color: rgba(34, 197, 94, 0.35);
   background: rgba(34, 197, 94, 0.12);
 }

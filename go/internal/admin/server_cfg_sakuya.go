@@ -426,6 +426,46 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 	}
 
 	instances := make([]sakuyaInstanceRow, 0, 1+len(cfg.Sakuya.Instances))
+
+	buildExampleURL := func(base string, publicURL string, prefix string) string {
+		base = strings.TrimSpace(base)
+		publicURL = strings.TrimSpace(publicURL)
+		prefix = strings.Trim(strings.TrimSpace(prefix), "/\\")
+
+		raw := base
+		if publicURL != "" {
+			raw = publicURL
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return ""
+		}
+
+		u, err := url.Parse(raw)
+		if err != nil || u == nil || strings.TrimSpace(u.Scheme) == "" || strings.TrimSpace(u.Host) == "" {
+			out := strings.TrimRight(raw, "/")
+			if prefix != "" {
+				suffix := "/" + prefix
+				if !strings.HasSuffix(strings.ToLower(out), strings.ToLower(suffix)) {
+					out += suffix
+				}
+			}
+			return strings.TrimRight(out, "/")
+		}
+
+		u.Path = strings.TrimRight(u.Path, "/")
+		if prefix != "" {
+			want := "/" + prefix
+			if !strings.HasSuffix(strings.ToLower(u.Path), strings.ToLower(want)) {
+				u.Path += want
+			}
+		}
+		u.RawPath = ""
+
+		out := strings.TrimRight(u.String(), "/")
+		return out
+	}
+
 	instances = append(instances, func() sakuyaInstanceRow {
 		base := baseURLForPort(r, port)
 		name := s.t(r, "common.default")
@@ -443,6 +483,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 			Enabled:    enabled,
 			Address:    addr,
 			ServiceURL: base,
+			ExampleURL: buildExampleURL(base, cfg.Sakuya.Oplist.PublicURL, ""),
 		}
 	}())
 	for _, it := range cfg.Sakuya.Instances {
@@ -479,6 +520,7 @@ func (s *server) renderSakuyaOplistForm(w http.ResponseWriter, r *http.Request, 
 			Enabled:    enabled,
 			Address:    addr,
 			ServiceURL: serviceURL,
+			ExampleURL: buildExampleURL(base, it.PublicURL, prefix),
 		})
 	}
 

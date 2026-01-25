@@ -1645,6 +1645,18 @@
     return out;
   };
 
+  const splitUrlSuffix = (raw) => {
+    const s = (raw || "").toString();
+    const q = s.indexOf("?");
+    const h = s.indexOf("#");
+    let idx = -1;
+    if (q >= 0 && h >= 0) idx = Math.min(q, h);
+    else if (q >= 0) idx = q;
+    else if (h >= 0) idx = h;
+    if (idx < 0) return [s, ""];
+    return [s.slice(0, idx), s.slice(idx)];
+  };
+
   const sanitizePathSegment = (raw) => {
     let out = (raw || "").toString().trim();
     while (out.startsWith("/") || out.startsWith("\\")) out = out.slice(1);
@@ -1660,8 +1672,13 @@
     const prefixEl = qs('input[name="oplistPrefix"]', form);
     const baseEl = qs("[data-sakuya-base-url]");
 
-    let base = sanitizeUrlBase(pubEl && pubEl.value);
-    if (!base) base = sanitizeUrlBase(baseEl && baseEl.textContent);
+    let rawBase = ((pubEl && pubEl.value) || "").toString().trim();
+    if (!rawBase) rawBase = ((baseEl && baseEl.textContent) || "").toString().trim();
+    if (!rawBase) return "";
+
+    let suffix = "";
+    [rawBase, suffix] = splitUrlSuffix(rawBase);
+    let base = sanitizeUrlBase(rawBase);
 
     let prefix = sanitizePathSegment(prefixEl && prefixEl.value);
 
@@ -1673,7 +1690,7 @@
     }
 
     base = sanitizeUrlBase(base);
-    return base;
+    return base + suffix;
   };
 
   const onSakuyaCopyExampleClick = (e) => {
@@ -1695,7 +1712,8 @@
     const el = e.target instanceof Element ? e.target.closest("[data-hz-copy]") : null;
     if (!el) return;
 
-    const text = (el.textContent || "").trim();
+    const attrText = (el.getAttribute("data-hz-copy-text") || "").trim();
+    const text = (attrText || el.textContent || "").trim();
     if (!text) return;
 
     copyText(text).then((ok) => {

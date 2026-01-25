@@ -552,6 +552,7 @@ func init() {
 		"common.clear":               "清空",
 		"common.clearHeaderMap":      "清空 HeaderMap",
 		"common.openHealth":          "打开 /_hazuki/health",
+		"common.copy":                "复制",
 
 		// JS
 		"js.modal.confirmTitle":  "确认操作",
@@ -1175,6 +1176,7 @@ func init() {
 		"common.clear":               "Clear",
 		"common.openHealth":          "Open /_hazuki/health",
 		"common.clearHeaderMap":      "Clear HeaderMap",
+		"common.copy":                "Copy",
 
 		// JS
 		"js.modal.confirmTitle":  "Confirm",

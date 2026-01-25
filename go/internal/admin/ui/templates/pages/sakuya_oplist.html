@@ -57,6 +57,7 @@
                   <div class="btn-row" style="margin-top:0;">
                     <a class="btn" href="{{if eq .ID "default"}}/config/sakuya/oplist{{else}}/config/sakuya/oplist?instance={{.ID}}{{end}}">{{$.T "common.edit"}}</a>
                     <a class="btn" href="{{.ServiceURL}}" target="_blank" rel="noreferrer">{{$.T "common.open"}}</a>
+                    <button class="btn" type="button" data-hz-copy="1" data-hz-copy-text="{{.ExampleURL}}">{{$.T "common.copy"}}</button>
                     {{if ne .ID "default"}}
                       <form method="post" action="/config/sakuya/oplist" style="margin:0; display:inline;" onsubmit="return confirm({{printf "%q" ($.T "sakuya.instances.confirmDelete" .Prefix)}})">
                         <input type="hidden" name="action" value="deleteInstance" />
@@ -131,7 +132,7 @@
               <div class="hint hint-line">
                 <span>{{.T "sakuya.oplist.publicUrlHint"}}</span>
                 <span class="spacer"></span>
-                <button class="btn hz-copy" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
+                <button class="btn" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
               </div>
             </div>
           {{end}}
@@ -145,7 +146,7 @@
               <div class="hint hint-line">
                 <span>{{.T "sakuya.oplist.publicUrlHint"}}</span>
                 <span class="spacer"></span>
-                <button class="btn hz-copy" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
+                <button class="btn" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
               </div>
             </div>
             <div class="field">

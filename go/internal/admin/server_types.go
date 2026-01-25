@@ -171,6 +171,7 @@ type sakuyaInstanceRow struct {
 	Enabled    bool
 	Address    string
 	ServiceURL string
+	ExampleURL string
 }
 
 type accountData struct {
