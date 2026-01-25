@@ -20,6 +20,77 @@
     return out;
   };
 
+  const THEME_KEY = "hazuki_theme";
+
+  const normalizeTheme = (v) => {
+    const t = (v || "").toString().trim().toLowerCase();
+    if (t === "dark" || t === "light") return t;
+    return "auto";
+  };
+
+  const getTheme = () => {
+    try {
+      return normalizeTheme(localStorage.getItem(THEME_KEY));
+    } catch {
+      return "auto";
+    }
+  };
+
+  const applyTheme = (theme) => {
+    const t = normalizeTheme(theme);
+    const root = document.documentElement;
+    if (!root) return;
+    if (t === "dark" || t === "light") {
+      root.setAttribute("data-theme", t);
+    } else {
+      root.removeAttribute("data-theme");
+    }
+  };
+
+  const themeLabel = (theme) => {
+    const t = normalizeTheme(theme);
+    if (t === "dark") return tKey("theme.dark", "Dark");
+    if (t === "light") return tKey("theme.light", "Light");
+    return tKey("theme.auto", "Auto");
+  };
+
+  const updateThemeToggle = () => {
+    const btn = qs("[data-theme-toggle]");
+    if (!btn) return;
+    const t = getTheme();
+    const label = themeLabel(t);
+    btn.textContent = label;
+    const title = tFmt("theme.toggleHint", "Theme: {mode} (click to toggle)", { mode: label });
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+  };
+
+  const setTheme = (theme) => {
+    const t = normalizeTheme(theme);
+    try {
+      if (t === "auto") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, t);
+    } catch {
+      // ignore
+    }
+    applyTheme(t);
+    updateThemeToggle();
+  };
+
+  const nextTheme = (cur) => {
+    const t = normalizeTheme(cur);
+    if (t === "auto") return "dark";
+    if (t === "dark") return "light";
+    return "auto";
+  };
+
+  const onThemeToggleClick = (e) => {
+    const btn = e.target instanceof Element ? e.target.closest("[data-theme-toggle]") : null;
+    if (!btn) return;
+    e.preventDefault();
+    setTheme(nextTheme(getTheme()));
+  };
+
   const canPjax = () =>
     typeof window.fetch === "function" &&
     typeof window.DOMParser === "function" &&
@@ -1134,6 +1205,7 @@
 
   const refreshPage = ({ skipNav = false, pathname = "" } = {}) => {
     if (!skipNav) updateNavActive(pathname);
+    updateThemeToggle();
     applyTimeFormatting();
     updateGitPreview();
     updateCdnjsPreview();
@@ -1645,11 +1717,20 @@
   document.addEventListener("click", onFormatJsonClick);
   document.addEventListener("change", onTogglePassword);
   document.addEventListener("click", onConfirmSubmitClick);
+  document.addEventListener("click", onThemeToggleClick);
   document.addEventListener("click", onCopyClick);
   document.addEventListener("click", onLinkClick);
   document.addEventListener("input", onPreviewInput);
   document.addEventListener("change", onPreviewInput);
   window.addEventListener("popstate", onPopState);
+  window.addEventListener("storage", (e) => {
+    if (!e) return;
+    if (e.key !== THEME_KEY) return;
+    applyTheme(getTheme());
+    updateThemeToggle();
+  });
+
+  applyTheme(getTheme());
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => refreshPage(), { once: true });

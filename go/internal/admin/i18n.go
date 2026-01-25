@@ -315,6 +315,7 @@ func init() {
 		"layout.menu":        "菜单",
 		"layout.login":       "登录",
 		"layout.language":    "语言",
+		"layout.theme":       "主题",
 		"layout.lang.zh":     "中文",
 		"layout.lang.en":     "English",
 
@@ -562,6 +563,10 @@ func init() {
 		"js.redis.ok":            "Redis 正常",
 		"js.redis.error":         "Redis 异常",
 		"js.redis.notConfigured": "Redis 未配置",
+		"js.theme.auto":          "自动",
+		"js.theme.dark":          "暗色",
+		"js.theme.light":         "亮色",
+		"js.theme.toggleHint":    "主题：{mode}（点击切换）",
 
 		"redisCache.subtitle":             "查看/清理 Hazuki 的 Redis 缓存（用于 jsDelivr 缓存；可选用于 Torcherino 小静态缓存）。",
 		"redisCache.namespaceLabel":       "范围",
@@ -932,6 +937,7 @@ func init() {
 		"layout.menu":        "Menu",
 		"layout.login":       "Sign in",
 		"layout.language":    "Language",
+		"layout.theme":       "Theme",
 		"layout.lang.zh":     "中文",
 		"layout.lang.en":     "English",
 
@@ -1179,6 +1185,10 @@ func init() {
 		"js.redis.ok":            "Redis OK",
 		"js.redis.error":         "Redis error",
 		"js.redis.notConfigured": "Redis not configured",
+		"js.theme.auto":          "Auto",
+		"js.theme.dark":          "Dark",
+		"js.theme.light":         "Light",
+		"js.theme.toggleHint":    "Theme: {mode} (click to toggle)",
 
 		"redisCache.subtitle":             "View and clear Hazuki Redis cache (used for jsDelivr cache; optionally used for Torcherino small static cache).",
 		"redisCache.namespaceLabel":       "Scope",

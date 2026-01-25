@@ -5,6 +5,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{{.Title}} - Hazuki</title>
+    <script>
+      (() => {
+        try {
+          const v = localStorage.getItem("hazuki_theme");
+          if (v === "dark" || v === "light") document.documentElement.setAttribute("data-theme", v);
+        } catch {}
+      })();
+    </script>
     <link rel="stylesheet" href="/assets/style.css" />
     <link rel="icon" href="/assets/fav.png" type="image/png" sizes="512x512" />
     <link rel="apple-touch-icon" href="/assets/fav.png" />
@@ -48,6 +56,7 @@
           <div class="actions">
             <a class="btn {{if .IsLang "zh"}}primary{{end}}" href="/lang?to=zh" data-no-pjax="1">{{.T "layout.lang.zh"}}</a>
             <a class="btn {{if .IsLang "en"}}primary{{end}}" href="/lang?to=en" data-no-pjax="1">{{.T "layout.lang.en"}}</a>
+            <button class="btn" type="button" data-theme-toggle>{{.T "layout.theme"}}</button>
             {{if .User}}
               <details class="mobile-nav">
                 <summary class="btn">{{.T "layout.menu"}}</summary>
