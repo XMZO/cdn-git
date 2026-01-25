@@ -74,3 +74,85 @@ func TestConfigStoreUpdate_PreserveEmptySecretsAppliedBeforeValidate(t *testing.
 		t.Fatalf("token mismatch: got %q want %q", got.Sakuya.Oplist.Token, wantToken)
 	}
 }
+
+func TestConfigStoreUpdate_PreserveEmptySecrets_SakuyaInstanceToken(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "hazuki.db")
+
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	crypto, err := NewCryptoContext(db, "test-master-key")
+	if err != nil {
+		t.Fatalf("NewCryptoContext: %v", err)
+	}
+
+	cs := NewConfigStore(db, crypto)
+	getEnv := func(string) string { return "" }
+	lookupEnv := func(string) (string, bool) { return "", false }
+	if err := cs.InitFromEnvironment(getEnv, lookupEnv); err != nil {
+		t.Fatalf("InitFromEnvironment: %v", err)
+	}
+
+	wantToken := "oplist_token"
+	wantAddr := "https://op.example.com"
+
+	if err := cs.Update(UpdateRequest{
+		Note: "seed",
+		Updater: func(cfg model.AppConfig) (model.AppConfig, error) {
+			cfg.Sakuya.Disabled = false
+			cfg.Sakuya.Oplist.Disabled = true
+			cfg.Sakuya.Instances = []model.SakuyaOplistInstance{
+				{
+					ID:       "i1",
+					Prefix:   "op1",
+					Disabled: false,
+					Address:  wantAddr,
+					Token:    wantToken,
+				},
+			}
+			return cfg, nil
+		},
+	}); err != nil {
+		t.Fatalf("seed Update: %v", err)
+	}
+
+	if err := cs.Update(UpdateRequest{
+		Note:                 "edit:sakuya:instance",
+		PreserveEmptySecrets: true,
+		Updater: func(cfg model.AppConfig) (model.AppConfig, error) {
+			cfg.Sakuya.Disabled = false
+			cfg.Sakuya.Oplist.Disabled = true
+			cfg.Sakuya.Instances = []model.SakuyaOplistInstance{
+				{
+					ID:       "i1",
+					Prefix:   "op1",
+					Disabled: false,
+					Address:  wantAddr,
+					Token:    "",
+				},
+			}
+			return cfg, nil
+		},
+	}); err != nil {
+		t.Fatalf("Update with PreserveEmptySecrets: %v", err)
+	}
+
+	got, err := cs.GetDecryptedConfig()
+	if err != nil {
+		t.Fatalf("GetDecryptedConfig: %v", err)
+	}
+	if len(got.Sakuya.Instances) != 1 {
+		t.Fatalf("unexpected instances: %d", len(got.Sakuya.Instances))
+	}
+	if got.Sakuya.Instances[0].Token != wantToken {
+		t.Fatalf("token mismatch: got %q want %q", got.Sakuya.Instances[0].Token, wantToken)
+	}
+}

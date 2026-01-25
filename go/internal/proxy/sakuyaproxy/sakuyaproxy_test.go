@@ -70,12 +70,13 @@ func TestFetchLink_RetryAndCache(t *testing.T) {
 		DownloadClient: &http.Client{Transport: http.DefaultTransport},
 	})
 
-	runtime := RuntimeConfig{
-		OplistAddress: srv.URL,
-		OplistToken:   "test-token",
+	inst := OplistInstance{
+		ID:      "default",
+		Address: srv.URL,
+		Token:   "test-token",
 	}
 
-	got, err := h.fetchLinkCached(context.Background(), runtime, "/a/b")
+	got, err := h.fetchLinkCached(context.Background(), inst, "/a/b")
 	if err != nil {
 		t.Fatalf("fetchLinkCached: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestFetchLink_RetryAndCache(t *testing.T) {
 		t.Fatalf("expected 2 calls (1 retry), got %d", calls)
 	}
 
-	got2, err := h.fetchLinkCached(context.Background(), runtime, "/a/b")
+	got2, err := h.fetchLinkCached(context.Background(), inst, "/a/b")
 	if err != nil {
 		t.Fatalf("fetchLinkCached (cached): %v", err)
 	}
@@ -95,5 +96,57 @@ func TestFetchLink_RetryAndCache(t *testing.T) {
 	}
 	if atomic.LoadInt32(&calls) != 2 {
 		t.Fatalf("expected cached result without extra calls, got %d", calls)
+	}
+}
+
+func TestPickInstance(t *testing.T) {
+	rt := RuntimeConfig{
+		Default: OplistInstance{ID: "default", Address: "https://a.example", Token: "tok-a"},
+		Instances: []OplistInstance{
+			{ID: "i1", Prefix: "op1", Address: "https://b.example", Token: "tok-b"},
+		},
+	}
+
+	inst, path, matched := pickInstance(rt, "/op1/foo/bar")
+	if !matched {
+		t.Fatalf("expected prefix match")
+	}
+	if inst.ID != "i1" {
+		t.Fatalf("expected i1, got %q", inst.ID)
+	}
+	if path != "/foo/bar" {
+		t.Fatalf("expected /foo/bar, got %q", path)
+	}
+
+	inst2, path2, matched2 := pickInstance(rt, "/x/y")
+	if matched2 {
+		t.Fatalf("expected default match")
+	}
+	if inst2.ID != "default" {
+		t.Fatalf("expected default, got %q", inst2.ID)
+	}
+	if path2 != "/x/y" {
+		t.Fatalf("expected /x/y, got %q", path2)
+	}
+}
+
+func TestPickInstance_DuplicatePrefixPrefersEnabledConfigured(t *testing.T) {
+	rt := RuntimeConfig{
+		Default: OplistInstance{ID: "default", Address: "https://a.example", Token: "tok-a"},
+		Instances: []OplistInstance{
+			{ID: "i1", Prefix: "op", Disabled: true, Address: "https://b.example", Token: "tok-b"},
+			{ID: "i2", Prefix: "op", Disabled: false, Address: "https://c.example", Token: "tok-c"},
+		},
+	}
+
+	inst, path, matched := pickInstance(rt, "/op/a")
+	if !matched {
+		t.Fatalf("expected prefix match")
+	}
+	if inst.ID != "i2" {
+		t.Fatalf("expected i2, got %q", inst.ID)
+	}
+	if path != "/a" {
+		t.Fatalf("expected /a, got %q", path)
 	}
 }

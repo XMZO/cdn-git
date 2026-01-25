@@ -148,6 +148,15 @@ func TestConfigStore_RotateMasterKey_ReencryptsWholeConfigAndSecrets(t *testing.
 			cfg.Sakuya.Oplist.Disabled = false
 			cfg.Sakuya.Oplist.Address = "https://op.example.com"
 			cfg.Sakuya.Oplist.Token = "tok"
+			cfg.Sakuya.Instances = []model.SakuyaOplistInstance{
+				{
+					ID:       "i1",
+					Prefix:   "op1",
+					Disabled: false,
+					Address:  "https://op2.example.com",
+					Token:    "tok2",
+				},
+			}
 			return cfg, nil
 		},
 	}); err != nil {
@@ -189,5 +198,14 @@ func TestConfigStore_RotateMasterKey_ReencryptsWholeConfigAndSecrets(t *testing.
 	if _, err := oldCrypto.DecryptString(encCfg.Sakuya.Oplist.Token); err == nil {
 		t.Fatalf("expected old key to fail decrypting token")
 	}
-}
 
+	if len(encCfg.Sakuya.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(encCfg.Sakuya.Instances))
+	}
+	if got, err := newCrypto.DecryptString(encCfg.Sakuya.Instances[0].Token); err != nil || got != "tok2" {
+		t.Fatalf("new key decrypt instance token: got=%q err=%v", got, err)
+	}
+	if _, err := oldCrypto.DecryptString(encCfg.Sakuya.Instances[0].Token); err == nil {
+		t.Fatalf("expected old key to fail decrypting instance token")
+	}
+}

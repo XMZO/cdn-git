@@ -149,10 +149,27 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 		}(),
 		SakuyaOplistStatus: func() serviceStatus {
 			port := ports.Sakuya
-			if cfg.Sakuya.Disabled || cfg.Sakuya.Oplist.Disabled || strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" || strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
+			if port == 0 {
+				port = 3200
+			}
+			if cfg.Sakuya.Disabled {
 				return disabledServiceStatus(port)
 			}
-			return checkServiceStatus(r.Context(), port)
+			if !cfg.Sakuya.Oplist.Disabled &&
+				strings.TrimSpace(cfg.Sakuya.Oplist.Address) != "" &&
+				strings.TrimSpace(cfg.Sakuya.Oplist.Token) != "" {
+				return checkServiceStatus(r.Context(), port)
+			}
+			for _, it := range cfg.Sakuya.Instances {
+				if it.Disabled {
+					continue
+				}
+				if strings.TrimSpace(it.Prefix) == "" || strings.TrimSpace(it.Address) == "" || strings.TrimSpace(it.Token) == "" {
+					continue
+				}
+				return checkServiceStatus(r.Context(), port)
+			}
+			return disabledServiceStatus(port)
 		}(),
 
 		Redis: checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port),

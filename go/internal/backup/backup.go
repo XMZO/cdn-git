@@ -382,6 +382,11 @@ func verifyConfigDecryptable(ctx context.Context, tx *sql.Tx, masterKey string) 
 	if err := try(cfg.Sakuya.Oplist.Token); err != nil {
 		return err
 	}
+	for _, inst := range cfg.Sakuya.Instances {
+		if err := try(inst.Token); err != nil {
+			return err
+		}
+	}
 	for _, v := range cfg.Torcherino.WorkerSecretHeaderMap {
 		if err := try(v); err != nil {
 			return err
@@ -915,12 +920,12 @@ func isAllowedTable(name string, cols []string) bool {
 }
 
 var allowedTables = map[string][]string{
-	"meta":           {"key", "value"},
-	"users":          {"id", "username", "password_hash", "created_at", "updated_at"},
-	"config_current": {"id", "config_json", "updated_at", "updated_by"},
+	"meta":            {"key", "value"},
+	"users":           {"id", "username", "password_hash", "created_at", "updated_at"},
+	"config_current":  {"id", "config_json", "updated_at", "updated_by"},
 	"config_versions": {"id", "config_json", "created_at", "created_by", "note"},
-	"sessions":       {"token_hash", "user_id", "created_at", "expires_at"},
-	"traffic_totals": {"service", "bytes_in", "bytes_out", "requests", "updated_at"},
+	"sessions":        {"token_hash", "user_id", "created_at", "expires_at"},
+	"traffic_totals":  {"service", "bytes_in", "bytes_out", "requests", "updated_at"},
 	"traffic_buckets": {"kind", "start_ts", "service", "bytes_in", "bytes_out", "requests", "updated_at"},
 }
 

@@ -235,6 +235,11 @@ func (s *ConfigStore) GetRedactedConfig() (model.AppConfig, error) {
 	if cfg.Sakuya.Oplist.Token != "" {
 		cfg.Sakuya.Oplist.Token = "__SET__"
 	}
+	for i := range cfg.Sakuya.Instances {
+		if cfg.Sakuya.Instances[i].Token != "" {
+			cfg.Sakuya.Instances[i].Token = "__SET__"
+		}
+	}
 	if cfg.Torcherino.WorkerSecretHeaderMap != nil {
 		out := make(map[string]string, len(cfg.Torcherino.WorkerSecretHeaderMap))
 		for k, v := range cfg.Torcherino.WorkerSecretHeaderMap {
@@ -334,6 +339,34 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 
 		if _, ok := clearSet["sakuya.oplist.token"]; !ok && next.Sakuya.Oplist.Token == "" {
 			next.Sakuya.Oplist.Token = current.Sakuya.Oplist.Token
+		}
+
+		if len(next.Sakuya.Instances) > 0 {
+			curTokens := make(map[string]string, len(current.Sakuya.Instances))
+			for _, inst := range current.Sakuya.Instances {
+				id := strings.TrimSpace(inst.ID)
+				if id == "" {
+					continue
+				}
+				curTokens[strings.ToLower(id)] = inst.Token
+			}
+
+			for i := range next.Sakuya.Instances {
+				id := strings.TrimSpace(next.Sakuya.Instances[i].ID)
+				if id == "" {
+					continue
+				}
+				path := "sakuya.instances." + id + ".token"
+				if _, ok := clearSet[path]; ok {
+					continue
+				}
+				if next.Sakuya.Instances[i].Token != "" {
+					continue
+				}
+				if tok, ok := curTokens[strings.ToLower(id)]; ok && tok != "" {
+					next.Sakuya.Instances[i].Token = tok
+				}
+			}
 		}
 	}
 
@@ -464,6 +497,17 @@ func encryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 			out.Sakuya.Oplist.Token = enc
 		}
 
+		for i := range out.Sakuya.Instances {
+			if out.Sakuya.Instances[i].Token == "" {
+				continue
+			}
+			enc, err := crypto.EncryptString(out.Sakuya.Instances[i].Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Sakuya.Instances[i].Token = enc
+		}
+
 		if out.Torcherino.WorkerSecretHeaderMap != nil {
 			next := make(map[string]string, len(out.Torcherino.WorkerSecretHeaderMap))
 			for k, v := range out.Torcherino.WorkerSecretHeaderMap {
@@ -524,6 +568,17 @@ func decryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 				return model.AppConfig{}, err
 			}
 			out.Sakuya.Oplist.Token = dec
+		}
+
+		for i := range out.Sakuya.Instances {
+			if out.Sakuya.Instances[i].Token == "" {
+				continue
+			}
+			dec, err := crypto.DecryptString(out.Sakuya.Instances[i].Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Sakuya.Instances[i].Token = dec
 		}
 
 		if out.Torcherino.WorkerSecretHeaderMap != nil {

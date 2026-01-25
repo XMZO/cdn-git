@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +21,11 @@ func (sakuyaModule) Name() string { return "sakuya" }
 
 func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) (*runningModule, error) {
 	var oplistRuntime atomic.Value
-	oplistRuntime.Store(sakuyaproxy.RuntimeConfig{Host: "0.0.0.0", Port: env.initialCfg.Ports.Sakuya})
+	oplistRuntime.Store(sakuyaproxy.RuntimeConfig{
+		Host:    "0.0.0.0",
+		Port:    env.initialCfg.Ports.Sakuya,
+		Default: sakuyaproxy.OplistInstance{ID: "default", Disabled: true},
+	})
 
 	buildOplistRuntime := func(cfg model.AppConfig, fallbackPort int) (sakuyaproxy.RuntimeConfig, error) {
 		tmp := cfg
@@ -29,14 +34,29 @@ func (sakuyaModule) Start(ctx context.Context, env *runtimeEnv, _ chan<- error) 
 	}
 
 	isOplistEnabled := func(cfg model.AppConfig) bool {
-		if cfg.Sakuya.Disabled || cfg.Sakuya.Oplist.Disabled {
+		if cfg.Sakuya.Disabled {
 			return false
 		}
-		// Only enable when configured, to avoid breaking older configs that don't have Sakuya yet.
-		if cfg.Sakuya.Oplist.Address == "" || cfg.Sakuya.Oplist.Token == "" {
-			return false
+		// Default instance (backward compatible).
+		if !cfg.Sakuya.Oplist.Disabled &&
+			strings.TrimSpace(cfg.Sakuya.Oplist.Address) != "" &&
+			strings.TrimSpace(cfg.Sakuya.Oplist.Token) != "" {
+			return true
 		}
-		return true
+		// Additional instances.
+		for _, it := range cfg.Sakuya.Instances {
+			if it.Disabled {
+				continue
+			}
+			if strings.TrimSpace(it.Prefix) == "" {
+				continue
+			}
+			if strings.TrimSpace(it.Address) == "" || strings.TrimSpace(it.Token) == "" {
+				continue
+			}
+			return true
+		}
+		return false
 	}
 
 	stateMu := &sync.Mutex{}

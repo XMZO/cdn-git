@@ -4,6 +4,7 @@
       <h2>{{.Title}} <span class="muted small">{{.T "sakuya.oplist.tagline"}}</span></h2>
       <div class="muted small">{{.T "sakuya.oplist.subtitle"}}</div>
       <div class="btn-row" style="margin-top:10px;">
+        <span class="pill">{{.T "sakuya.instances.current"}}：<code>{{if .CurrentInstanceID}}{{.CurrentInstanceID}}{{else}}default{{end}}</code>{{if .CurrentInstanceName}} · {{.CurrentInstanceName}}{{end}}</span>
         <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.SakuyaBaseURL}}</code></span>
         {{if .SakuyaStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}{{end}}
         <a class="btn" href="{{.SakuyaHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
@@ -13,7 +14,80 @@
       {{end}}
     </div>
 
+    <div class="card">
+      <h3>{{.T "sakuya.instances.title"}}</h3>
+      <div class="muted small">{{.T "sakuya.instances.hint"}}</div>
+
+      <div class="table-wrap" style="margin-top:12px;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>{{.T "common.name"}}</th>
+              <th>{{.T "sakuya.instances.prefix"}}</th>
+              <th>{{.T "sakuya.instances.address"}}</th>
+              <th>{{.T "common.status"}}</th>
+              <th>{{.T "common.actions"}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Instances}}
+              <tr>
+                <td>{{.Name}}</td>
+                <td>{{if .Prefix}}<code>/{{.Prefix}}/</code>{{else}}<span class="muted small">{{$.T "common.default"}}</span>{{end}}</td>
+                <td><span class="hz-ellipsis" title="{{.Address}}">{{.Address}}</span></td>
+                <td>{{if .Enabled}}<span class="pill ok">{{$.T "common.enabled"}}</span>{{else}}<span class="pill">{{$.T "common.disabled"}}</span>{{end}}</td>
+                <td>
+                  <div class="btn-row" style="margin-top:0;">
+                    <a class="btn" href="{{if eq .ID "default"}}/config/sakuya/oplist{{else}}/config/sakuya/oplist?instance={{.ID}}{{end}}">{{$.T "common.edit"}}</a>
+                    <a class="btn" href="{{.ServiceURL}}" target="_blank" rel="noreferrer">{{$.T "common.open"}}</a>
+                    {{if ne .ID "default"}}
+                      <form method="post" action="/config/sakuya/oplist" style="margin:0; display:inline;" onsubmit="return confirm({{printf "%q" ($.T "sakuya.instances.confirmDelete" .Prefix)}})">
+                        <input type="hidden" name="action" value="deleteInstance" />
+                        <input type="hidden" name="instanceID" value="{{.ID}}" />
+                        <button class="btn danger" type="submit">{{$.T "common.delete"}}</button>
+                      </form>
+                    {{end}}
+                  </div>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <details class="accordion" style="margin-top:12px;">
+        <summary>{{.T "sakuya.instances.addTitle"}}</summary>
+        <div class="body">
+          <form class="form" method="post" action="/config/sakuya/oplist">
+            <input type="hidden" name="action" value="addInstance" />
+            <div class="grid cols-2">
+              <div class="field">
+                <label>{{.T "sakuya.instances.prefixLabel"}}</label>
+                <input type="text" name="newInstancePrefix" value="" placeholder="op1" required />
+                <div class="hint">{{.T "sakuya.instances.prefixHint"}}</div>
+              </div>
+              <div class="field">
+                <label>{{.T "common.name"}} {{.T "common.optionalTag"}}</label>
+                <input type="text" name="newInstanceName" value="" placeholder="{{.T "sakuya.instances.namePlaceholder"}}" />
+              </div>
+            </div>
+            <div class="field">
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="ignoreDuplicatePrefix" />
+                {{.T "sakuya.instances.ignoreDup"}}
+              </label>
+              <div class="hint">{{.T "sakuya.instances.ignoreDupHint"}}</div>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary" type="submit">{{.T "common.add"}}</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </div>
+
     <form class="form" method="post" action="/config/sakuya/oplist">
+      <input type="hidden" name="instanceID" value="{{.CurrentInstanceID}}" />
       <div class="card">
         <h3>{{.T "common.basicConfig"}}</h3>
         <div class="grid cols-2">
@@ -22,19 +96,35 @@
             <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" />
             <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
           </div>
-          <div class="field">
-            <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">OPLIST_ADDRESS</span></label>
-            <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
-            <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
-          </div>
+          {{if ne .CurrentInstanceID ""}}
+            <div class="field">
+              <label>{{.T "sakuya.instances.prefixLabel"}} <span class="key">sakuya.instances[].prefix</span></label>
+              <input type="text" name="oplistPrefix" value="{{.OplistPrefixValue}}" placeholder="op1" />
+              <div class="hint">{{.T "sakuya.instances.prefixEditHint"}}</div>
+            </div>
+          {{else}}
+            <div class="field">
+              <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">OPLIST_ADDRESS</span></label>
+              <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
+              <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
+            </div>
+          {{end}}
         </div>
 
         <div class="grid cols-2">
-          <div class="field">
-            <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">OPLIST_PUBLIC_URL</span></label>
-            <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
-            <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
-          </div>
+          {{if ne .CurrentInstanceID ""}}
+            <div class="field">
+              <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">sakuya.instances[].address</span></label>
+              <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
+              <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
+            </div>
+          {{else}}
+            <div class="field">
+              <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">OPLIST_PUBLIC_URL</span></label>
+              <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
+              <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
+            </div>
+          {{end}}
           <div class="field">
             <label>{{.T "sakuya.oplist.tokenLabel"}} <span class="key">OPLIST_TOKEN</span></label>
             <input id="oplistTokenInput" type="password" name="oplistToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderNotSet"}}{{end}}" />
@@ -53,11 +143,29 @@
           </div>
         </div>
 
+        <div class="grid cols-2">
+          {{if ne .CurrentInstanceID ""}}
+            <div class="field">
+              <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">sakuya.instances[].publicUrl</span></label>
+              <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
+              <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
+            </div>
+            <div class="field">
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="ignoreDuplicatePrefix" {{if .IgnoreDuplicatePrefix}}checked{{end}} />
+                <input type="hidden" name="ignoreDuplicatePrefix" value="0" />
+                {{.T "sakuya.instances.ignoreDup"}}
+              </label>
+              <div class="hint">{{.T "sakuya.instances.ignoreDupHint"}}</div>
+            </div>
+          {{end}}
+        </div>
+
         <div class="field">
           <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
-            <input type="checkbox" name="serviceEnabled" {{if and (not .Sakuya.Disabled) (not .Sakuya.Oplist.Disabled)}}checked{{end}} />
+            <input type="checkbox" name="serviceEnabled" {{if .ServiceEnabled}}checked{{end}} />
             <input type="hidden" name="serviceEnabled" value="0" />
-            {{.T "common.enableService"}} <span class="key">sakuya.oplist.disabled</span>
+            {{.T "common.enableService"}} <span class="key">{{if ne .CurrentInstanceID ""}}sakuya.instances[].disabled{{else}}sakuya.oplist.disabled{{end}}</span>
           </label>
           <div class="hint">{{.T "sakuya.serviceToggleHint"}}</div>
         </div>

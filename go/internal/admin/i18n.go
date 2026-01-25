@@ -84,6 +84,11 @@ func init() {
 		"warning.cdnjs.redisError":         "cdnjs：Redis 连接失败，缓存将不可用（或请求会更慢）。",
 		"warning.torcherino.badConfig":     "torcherino：DEFAULT_TARGET 为空且 HOST_MAPPING 为空，服务将返回 502。",
 
+		"error.sakuya.prefixRequired":   "Sakuya：前缀不能为空",
+		"error.sakuya.prefixDuplicated": "Sakuya：前缀重复：%s",
+		"error.sakuya.instanceExists":   "Sakuya：实例已存在：%s",
+		"error.sakuya.instanceNotFound": "Sakuya：实例不存在：%s",
+
 		"sakuya.serviceToggleHint": "未启用时不会监听端口；保存后立即生效。",
 
 		"sakuya.oplist.tagline":        "（OpenList 直链加速）",
@@ -94,6 +99,21 @@ func init() {
 		"sakuya.oplist.publicUrlHint":  "用于识别 Location 重定向回自身；留空则自动根据请求推断。",
 		"sakuya.oplist.tokenLabel":     "Token",
 		"sakuya.oplist.tokenHint":      "同时用于 Authorization 与签名密钥（HMAC-SHA256）。",
+
+		"sakuya.instances.current":         "当前实例",
+		"sakuya.instances.title":           "实例",
+		"sakuya.instances.hint":            "支持多个 OpenList，通过 URL 前缀 /xxx/ 选择；不带前缀走默认实例。",
+		"sakuya.instances.prefix":          "前缀",
+		"sakuya.instances.address":         "地址",
+		"sakuya.instances.addTitle":        "添加实例",
+		"sakuya.instances.prefixLabel":     "URL 前缀",
+		"sakuya.instances.prefixHint":      "示例：op1 → 访问 /op1/... 将使用该实例；不要包含斜杠。",
+		"sakuya.instances.prefixEditHint":  "修改后 URL 变为 /<prefix>/...；建议避免与目录名冲突。",
+		"sakuya.instances.namePlaceholder": "可选显示名",
+		"sakuya.instances.ignoreDup":       "忽略前缀查重（允许重复）",
+		"sakuya.instances.ignoreDupHint":   "重复前缀会按配置顺序匹配，建议同一时刻只启用一个。",
+		"sakuya.instances.created":         "实例已创建",
+		"sakuya.instances.confirmDelete":   "确定删除实例（/%s/）？",
 
 		"wizard.subtitle":        "一次性把三项核心服务配置好（保存后立即生效；端口需重启）。",
 		"wizard.saveConfig":      "保存配置",
@@ -662,6 +682,11 @@ func init() {
 		"warning.cdnjs.redisError":         "cdnjs: Redis connection failed; cache will be unavailable (or requests will be slower).",
 		"warning.torcherino.badConfig":     "Torcherino: DEFAULT_TARGET is empty and HOST_MAPPING is empty; the service will return 502.",
 
+		"error.sakuya.prefixRequired":   "Sakuya: prefix is required",
+		"error.sakuya.prefixDuplicated": "Sakuya: duplicated prefix: %s",
+		"error.sakuya.instanceExists":   "Sakuya: instance already exists: %s",
+		"error.sakuya.instanceNotFound": "Sakuya: instance not found: %s",
+
 		"sakuya.serviceToggleHint": "When disabled, the service stops listening immediately.",
 
 		"sakuya.oplist.tagline":        "OpenList link accelerator",
@@ -672,6 +697,21 @@ func init() {
 		"sakuya.oplist.publicUrlHint":  "Used to detect redirects back to itself; leave empty to infer from the request.",
 		"sakuya.oplist.tokenLabel":     "Token",
 		"sakuya.oplist.tokenHint":      "Used for both Authorization and HMAC-SHA256 signing.",
+
+		"sakuya.instances.current":         "Current instance",
+		"sakuya.instances.title":           "Instances",
+		"sakuya.instances.hint":            "Supports multiple OpenList instances routed by URL prefix (/xxx/). Requests without a prefix use the default instance.",
+		"sakuya.instances.prefix":          "Prefix",
+		"sakuya.instances.address":         "Address",
+		"sakuya.instances.addTitle":        "Add instance",
+		"sakuya.instances.prefixLabel":     "URL prefix",
+		"sakuya.instances.prefixHint":      "Example: op1 → requests to /op1/... use this instance (no slashes).",
+		"sakuya.instances.prefixEditHint":  "After changing, URLs become /<prefix>/...; avoid conflicts with directory names.",
+		"sakuya.instances.namePlaceholder": "Optional display name",
+		"sakuya.instances.ignoreDup":       "Ignore duplicate prefix check",
+		"sakuya.instances.ignoreDupHint":   "If prefixes duplicate, matching is first-come; keep only one enabled at a time.",
+		"sakuya.instances.created":         "Instance created",
+		"sakuya.instances.confirmDelete":   "Delete instance (/%s/)?",
 
 		"wizard.subtitle":        "Configure the 3 core services in one place (changes apply immediately; port changes require restart).",
 		"wizard.saveConfig":      "Save config",

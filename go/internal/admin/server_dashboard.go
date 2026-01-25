@@ -209,6 +209,14 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 			strings.TrimSpace(cfg.Torcherino.WorkerSecretKey) != "" ||
 			strings.TrimSpace(cfg.Sakuya.Oplist.Token) != "" ||
 			len(cfg.Torcherino.WorkerSecretHeaderMap) > 0
+		if !hasSecret {
+			for _, it := range cfg.Sakuya.Instances {
+				if strings.TrimSpace(it.Token) != "" {
+					hasSecret = true
+					break
+				}
+			}
+		}
 		if hasSecret {
 			warnings = append(warnings, s.t(r, "warning.masterKeyMissing"))
 		}
@@ -249,7 +257,11 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	torcherinoURL := baseURLForPort(r, cfg.Ports.Torcherino)
 	cdnjsURL := baseURLForPort(r, cfg.Ports.Cdnjs)
 	gitURL := baseURLForPort(r, cfg.Ports.Git)
-	sakuyaURL := baseURLForPort(r, cfg.Ports.Sakuya)
+	sakuyaPort := cfg.Ports.Sakuya
+	if sakuyaPort == 0 {
+		sakuyaPort = 3200
+	}
+	sakuyaURL := baseURLForPort(r, sakuyaPort)
 
 	gitInstances := []gitInstanceRow{}
 	if len(cfg.GitInstances) > 0 {
@@ -328,13 +340,24 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		SakuyaURL:       sakuyaURL,
 		SakuyaHealthURL: "/_hazuki/health/sakuya",
 		SakuyaStatus: func() serviceStatus {
-			if cfg.Sakuya.Disabled ||
-				cfg.Sakuya.Oplist.Disabled ||
-				strings.TrimSpace(cfg.Sakuya.Oplist.Address) == "" ||
-				strings.TrimSpace(cfg.Sakuya.Oplist.Token) == "" {
-				return disabledServiceStatus(cfg.Ports.Sakuya)
+			if cfg.Sakuya.Disabled {
+				return disabledServiceStatus(sakuyaPort)
 			}
-			return checkServiceStatus(r.Context(), cfg.Ports.Sakuya)
+			if !cfg.Sakuya.Oplist.Disabled &&
+				strings.TrimSpace(cfg.Sakuya.Oplist.Address) != "" &&
+				strings.TrimSpace(cfg.Sakuya.Oplist.Token) != "" {
+				return checkServiceStatus(r.Context(), sakuyaPort)
+			}
+			for _, it := range cfg.Sakuya.Instances {
+				if it.Disabled {
+					continue
+				}
+				if strings.TrimSpace(it.Prefix) == "" || strings.TrimSpace(it.Address) == "" || strings.TrimSpace(it.Token) == "" {
+					continue
+				}
+				return checkServiceStatus(r.Context(), sakuyaPort)
+			}
+			return disabledServiceStatus(sakuyaPort)
 		}(),
 
 		CdnjsRedis: redisSt,

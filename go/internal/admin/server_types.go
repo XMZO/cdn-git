@@ -136,15 +136,35 @@ type sakuyaOplistData struct {
 	SakuyaPort      int
 	SakuyaPortValue string
 
+	CurrentInstanceID     string
+	CurrentInstanceName   string
+	CurrentInstancePrefix string
+
+	OplistPrefixValue    string
 	OplistAddressValue   string
 	OplistPublicURLValue string
 
 	TokenIsSet bool
 	TokenValue string
 
+	ServiceEnabled bool
+
+	IgnoreDuplicatePrefix bool
+
+	Instances []sakuyaInstanceRow
+
 	SakuyaBaseURL   string
 	SakuyaHealthURL string
 	SakuyaStatus    serviceStatus
+}
+
+type sakuyaInstanceRow struct {
+	ID         string
+	Name       string
+	Prefix     string
+	Enabled    bool
+	Address    string
+	ServiceURL string
 }
 
 type accountData struct {

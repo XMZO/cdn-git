@@ -91,10 +91,29 @@ type SakuyaConfig struct {
 	Disabled bool `json:"disabled,omitempty"`
 
 	Oplist SakuyaOplist `json:"oplist"`
+
+	// Additional OpenList instances routed by URL prefix (e.g. /op1/...).
+	// The default instance uses `oplist` and matches requests without a prefix.
+	Instances []SakuyaOplistInstance `json:"instances,omitempty"`
 }
 
 type SakuyaOplist struct {
 	Disabled bool `json:"disabled,omitempty"`
+
+	Address   string `json:"address"`
+	Token     string `json:"token"`
+	PublicURL string `json:"publicUrl,omitempty"`
+}
+
+type SakuyaOplistInstance struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+
+	Disabled bool `json:"disabled,omitempty"`
+
+	// URL path prefix segment used to select this instance, without slashes.
+	// Example: "op1" matches /op1/...
+	Prefix string `json:"prefix"`
 
 	Address   string `json:"address"`
 	Token     string `json:"token"`
@@ -268,10 +287,24 @@ func (c AppConfig) Validate() error {
 		usedPorts[port] = name
 		return nil
 	}
-	oplistConfigured := strings.TrimSpace(c.Sakuya.Oplist.Address) != "" ||
+
+	// Sakuya (OpenList/Oplist) can have multiple instances. The default instance uses `sakuya.oplist`.
+	defaultOplistConfigured := strings.TrimSpace(c.Sakuya.Oplist.Address) != "" ||
 		strings.TrimSpace(c.Sakuya.Oplist.Token) != "" ||
 		strings.TrimSpace(c.Sakuya.Oplist.PublicURL) != ""
-	oplistEnabled := !c.Sakuya.Disabled && !c.Sakuya.Oplist.Disabled && oplistConfigured
+	defaultOplistEnabled := !c.Sakuya.Disabled && !c.Sakuya.Oplist.Disabled && defaultOplistConfigured
+
+	anyInstanceEnabled := false
+	for _, inst := range c.Sakuya.Instances {
+		instConfigured := strings.TrimSpace(inst.Address) != "" ||
+			strings.TrimSpace(inst.Token) != "" ||
+			strings.TrimSpace(inst.PublicURL) != ""
+		if !c.Sakuya.Disabled && !inst.Disabled && instConfigured {
+			anyInstanceEnabled = true
+			break
+		}
+	}
+	sakuyaEnabled := defaultOplistEnabled || anyInstanceEnabled
 	if !c.Torcherino.Disabled {
 		if err := addPort(c.Ports.Torcherino, "torcherino"); err != nil {
 			return err
@@ -287,7 +320,7 @@ func (c AppConfig) Validate() error {
 			return err
 		}
 	}
-	if oplistEnabled {
+	if sakuyaEnabled {
 		port := c.Ports.Sakuya
 		if port == 0 {
 			port = 3200
@@ -343,7 +376,7 @@ func (c AppConfig) Validate() error {
 		}
 	}
 
-	if oplistEnabled {
+	if defaultOplistEnabled {
 		if strings.TrimSpace(c.Sakuya.Oplist.Token) == "" {
 			return errors.New("sakuya.oplist.token is required")
 		}
@@ -376,7 +409,100 @@ func (c AppConfig) Validate() error {
 			}
 		}
 	}
+
+	seenSakuyaIDs := map[string]struct{}{}
+	for i, inst := range c.Sakuya.Instances {
+		id := strings.TrimSpace(inst.ID)
+		if id == "" {
+			return fmt.Errorf("sakuya.instances[%d].id is required", i)
+		}
+		if strings.EqualFold(id, "default") {
+			return fmt.Errorf("sakuya.instances[%d].id cannot be 'default'", i)
+		}
+		if _, ok := seenSakuyaIDs[strings.ToLower(id)]; ok {
+			return fmt.Errorf("sakuya.instances[%d].id duplicated: %q", i, id)
+		}
+		seenSakuyaIDs[strings.ToLower(id)] = struct{}{}
+
+		prefix := strings.TrimSpace(inst.Prefix)
+		if prefix == "" {
+			return fmt.Errorf("sakuya.instances[%q].prefix is required", id)
+		}
+		if strings.EqualFold(prefix, "_hazuki") {
+			return fmt.Errorf("sakuya.instances[%q].prefix is reserved", id)
+		}
+		if strings.Contains(prefix, "/") || strings.Contains(prefix, "\\") {
+			return fmt.Errorf("sakuya.instances[%q].prefix must not contain slashes", id)
+		}
+		if !isValidPathPrefixSegment(prefix) {
+			return fmt.Errorf("sakuya.instances[%q].prefix is invalid", id)
+		}
+
+		instConfigured := strings.TrimSpace(inst.Address) != "" ||
+			strings.TrimSpace(inst.Token) != "" ||
+			strings.TrimSpace(inst.PublicURL) != ""
+		instEnabled := !c.Sakuya.Disabled && !inst.Disabled && instConfigured
+		if !instEnabled {
+			continue
+		}
+
+		if strings.TrimSpace(inst.Token) == "" {
+			return fmt.Errorf("sakuya.instances[%q].token is required", id)
+		}
+
+		addr := strings.TrimSpace(inst.Address)
+		if addr == "" {
+			return fmt.Errorf("sakuya.instances[%q].address is required", id)
+		}
+		u, err := url.Parse(addr)
+		if err != nil {
+			return fmt.Errorf("sakuya.instances[%q].address is invalid", id)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return fmt.Errorf("sakuya.instances[%q].address must start with http:// or https://", id)
+		}
+		if strings.TrimSpace(u.Host) == "" {
+			return fmt.Errorf("sakuya.instances[%q].address host is empty", id)
+		}
+
+		if strings.TrimSpace(inst.PublicURL) != "" {
+			pu, err := url.Parse(strings.TrimSpace(inst.PublicURL))
+			if err != nil {
+				return fmt.Errorf("sakuya.instances[%q].publicUrl is invalid", id)
+			}
+			if pu.Scheme != "http" && pu.Scheme != "https" {
+				return fmt.Errorf("sakuya.instances[%q].publicUrl must start with http:// or https://", id)
+			}
+			if strings.TrimSpace(pu.Host) == "" {
+				return fmt.Errorf("sakuya.instances[%q].publicUrl host is empty", id)
+			}
+		}
+	}
 	return nil
+}
+
+func isValidPathPrefixSegment(s string) bool {
+	// Intentionally strict: this becomes part of the public URL path.
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	if len(s) > 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c == '-':
+		case c == '_':
+		case c == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func parsePort(value string, fallback int) int {

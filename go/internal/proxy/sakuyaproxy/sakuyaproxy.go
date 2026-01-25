@@ -26,9 +26,20 @@ type RuntimeConfig struct {
 	Host string
 	Port int
 
-	OplistAddress   string
-	OplistToken     string
-	OplistPublicURL string
+	Default   OplistInstance
+	Instances []OplistInstance
+}
+
+type OplistInstance struct {
+	ID     string
+	Name   string
+	Prefix string
+
+	Disabled bool
+
+	Address   string
+	Token     string
+	PublicURL string
 }
 
 func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
@@ -37,10 +48,30 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 		port = 3200
 	}
 
-	opAddr := strings.TrimSpace(cfg.Sakuya.Oplist.Address)
-	if opAddr != "" {
-		opAddr = strings.TrimRight(opAddr, "/")
-		u, err := url.Parse(opAddr)
+	// Global disable: keep runtime but mark everything disabled/unconfigured.
+	if cfg.Sakuya.Disabled {
+		return RuntimeConfig{
+			Host: "0.0.0.0",
+			Port: port,
+			Default: OplistInstance{
+				ID:       "default",
+				Disabled: true,
+			},
+			Instances: []OplistInstance{},
+		}, nil
+	}
+
+	def := OplistInstance{
+		ID:        "default",
+		Name:      "default",
+		Disabled:  cfg.Sakuya.Oplist.Disabled,
+		Address:   strings.TrimSpace(cfg.Sakuya.Oplist.Address),
+		Token:     cfg.Sakuya.Oplist.Token,
+		PublicURL: strings.TrimSpace(cfg.Sakuya.Oplist.PublicURL),
+	}
+	if strings.TrimSpace(def.Address) != "" && !def.Disabled {
+		def.Address = strings.TrimRight(def.Address, "/")
+		u, err := url.Parse(def.Address)
 		if err != nil {
 			return RuntimeConfig{}, err
 		}
@@ -51,11 +82,9 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 			return RuntimeConfig{}, errors.New("sakuya.oplist.address host is empty")
 		}
 	}
-
-	publicURL := strings.TrimSpace(cfg.Sakuya.Oplist.PublicURL)
-	if publicURL != "" {
-		publicURL = strings.TrimRight(publicURL, "/")
-		u, err := url.Parse(publicURL)
+	if strings.TrimSpace(def.PublicURL) != "" && !def.Disabled {
+		def.PublicURL = strings.TrimRight(def.PublicURL, "/")
+		u, err := url.Parse(def.PublicURL)
 		if err != nil {
 			return RuntimeConfig{}, err
 		}
@@ -67,13 +96,65 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 		}
 	}
 
-	return RuntimeConfig{
-		Host: "0.0.0.0",
-		Port: port,
+	instances := make([]OplistInstance, 0, len(cfg.Sakuya.Instances))
+	for _, it := range cfg.Sakuya.Instances {
+		id := strings.TrimSpace(it.ID)
+		if id == "" {
+			continue
+		}
+		prefix := strings.TrimSpace(it.Prefix)
+		prefix = strings.Trim(prefix, "/")
+		prefix = strings.Trim(prefix, "\\")
 
-		OplistAddress:   opAddr,
-		OplistToken:     cfg.Sakuya.Oplist.Token,
-		OplistPublicURL: publicURL,
+		inst := OplistInstance{
+			ID:        id,
+			Name:      strings.TrimSpace(it.Name),
+			Prefix:    prefix,
+			Disabled:  it.Disabled,
+			Address:   strings.TrimSpace(it.Address),
+			Token:     it.Token,
+			PublicURL: strings.TrimSpace(it.PublicURL),
+		}
+
+		// Only validate/normalize when it's enabled; disabled instances can keep drafts.
+		if !inst.Disabled {
+			if strings.TrimSpace(inst.Address) != "" {
+				inst.Address = strings.TrimRight(inst.Address, "/")
+				u, err := url.Parse(inst.Address)
+				if err != nil {
+					return RuntimeConfig{}, err
+				}
+				if u.Scheme != "http" && u.Scheme != "https" {
+					return RuntimeConfig{}, errors.New("sakuya.instances.address must start with http:// or https://")
+				}
+				if strings.TrimSpace(u.Host) == "" {
+					return RuntimeConfig{}, errors.New("sakuya.instances.address host is empty")
+				}
+			}
+
+			if strings.TrimSpace(inst.PublicURL) != "" {
+				inst.PublicURL = strings.TrimRight(inst.PublicURL, "/")
+				u, err := url.Parse(inst.PublicURL)
+				if err != nil {
+					return RuntimeConfig{}, err
+				}
+				if u.Scheme != "http" && u.Scheme != "https" {
+					return RuntimeConfig{}, errors.New("sakuya.instances.publicUrl must start with http:// or https://")
+				}
+				if strings.TrimSpace(u.Host) == "" {
+					return RuntimeConfig{}, errors.New("sakuya.instances.publicUrl host is empty")
+				}
+			}
+		}
+
+		instances = append(instances, inst)
+	}
+
+	return RuntimeConfig{
+		Host:      "0.0.0.0",
+		Port:      port,
+		Default:   def,
+		Instances: instances,
 	}, nil
 }
 
@@ -170,26 +251,38 @@ func (h *Handler) serveHTTP(w http.ResponseWriter, r *http.Request, runtime Runt
 		origin = "*"
 	}
 
-	// If config isn't ready, behave like a disabled/broken upstream.
-	if strings.TrimSpace(runtime.OplistAddress) == "" || strings.TrimSpace(runtime.OplistToken) == "" {
-		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": "oplist is not configured"})
-		return
-	}
-
 	decodedPath, err := url.PathUnescape(r.URL.EscapedPath())
 	if err != nil {
 		writeJSON(w, r, origin, map[string]any{"code": 400, "message": "path invalid"})
 		return
 	}
 
+	inst, oplistPath, _ := pickInstance(runtime, decodedPath)
+	if inst.Disabled {
+		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": "oplist instance is disabled"})
+		return
+	}
+
+	// If config isn't ready, behave like a disabled/broken upstream.
+	if strings.TrimSpace(inst.Address) == "" || strings.TrimSpace(inst.Token) == "" {
+		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": "oplist is not configured"})
+		return
+	}
+
 	sign := r.URL.Query().Get("sign")
-	if msg := verifySign(decodedPath, sign, runtime.OplistToken, time.Now()); msg != "" {
+	msg := verifySign(decodedPath, sign, inst.Token, time.Now())
+	if msg != "" && msg == "sign mismatch" && strings.TrimSpace(oplistPath) != "" && oplistPath != decodedPath {
+		if msg2 := verifySign(oplistPath, sign, inst.Token, time.Now()); msg2 == "" {
+			msg = ""
+		}
+	}
+	if msg != "" {
 		// Keep Worker behavior: HTTP 200 with app-level code.
 		writeJSON(w, r, origin, map[string]any{"code": 401, "message": msg})
 		return
 	}
 
-	link, err := h.fetchLinkCached(r.Context(), runtime, decodedPath)
+	link, err := h.fetchLinkCached(r.Context(), inst, oplistPath)
 	if err != nil {
 		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": err.Error()})
 		return
@@ -213,7 +306,7 @@ func (h *Handler) serveHTTP(w http.ResponseWriter, r *http.Request, runtime Runt
 	upReq.Header.Set("Accept-Encoding", "identity")
 	applyLinkHeaders(upReq.Header, link.Data.Header)
 
-	resp, err := h.doWithRedirects(upReq, runtime, r, w, depth)
+	resp, err := h.doWithRedirects(upReq, runtime, inst, r, w, depth)
 	if err != nil {
 		writeJSONWithStatus(w, r, origin, http.StatusBadGateway, map[string]any{"code": 502, "message": err.Error()})
 		return
@@ -254,17 +347,96 @@ func (h *Handler) serveHTTP(w http.ResponseWriter, r *http.Request, runtime Runt
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func pickInstance(runtime RuntimeConfig, requestPath string) (OplistInstance, string, bool) {
+	seg, rest := splitFirstPathSegment(requestPath)
+	if seg == "" {
+		return runtime.Default, requestPath, false
+	}
+
+	matchIdx := -1
+	for i := range runtime.Instances {
+		prefix := strings.TrimSpace(runtime.Instances[i].Prefix)
+		if prefix == "" {
+			continue
+		}
+		if !strings.EqualFold(prefix, seg) {
+			continue
+		}
+
+		if matchIdx == -1 {
+			matchIdx = i
+		}
+
+		// Prefer the first enabled+configured instance when duplicates exist.
+		it := runtime.Instances[i]
+		if it.Disabled {
+			continue
+		}
+		if strings.TrimSpace(it.Address) == "" || strings.TrimSpace(it.Token) == "" {
+			continue
+		}
+
+		oplistPath := rest
+		if oplistPath == "" {
+			oplistPath = "/"
+		}
+		return it, oplistPath, true
+	}
+
+	if matchIdx != -1 {
+		oplistPath := rest
+		if oplistPath == "" {
+			oplistPath = "/"
+		}
+		return runtime.Instances[matchIdx], oplistPath, true
+	}
+
+	return runtime.Default, requestPath, false
+}
+
+func splitFirstPathSegment(path string) (string, string) {
+	if path == "" {
+		return "", ""
+	}
+	p := strings.TrimPrefix(path, "/")
+	if p == "" {
+		return "", ""
+	}
+	if idx := strings.IndexByte(p, '/'); idx >= 0 {
+		return p[:idx], p[idx:]
+	}
+	return p, ""
+}
+
 func (h *Handler) writeHealth(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig) {
+	instances := make([]map[string]any, 0, len(runtime.Instances))
+	for _, it := range runtime.Instances {
+		instances = append(instances, map[string]any{
+			"id":             it.ID,
+			"name":           it.Name,
+			"prefix":         it.Prefix,
+			"disabled":       it.Disabled,
+			"address":        it.Address,
+			"tokenSet":       strings.TrimSpace(it.Token) != "",
+			"publicUrl":      it.PublicURL,
+			"publicUrlIsSet": strings.TrimSpace(it.PublicURL) != "",
+		})
+	}
+
 	payload := map[string]any{
 		"ok":      true,
 		"service": "sakuya",
 		"host":    runtime.Host,
 		"port":    runtime.Port,
 		"oplist": map[string]any{
-			"address":        runtime.OplistAddress,
-			"tokenSet":       strings.TrimSpace(runtime.OplistToken) != "",
-			"publicUrl":      runtime.OplistPublicURL,
-			"publicUrlIsSet": strings.TrimSpace(runtime.OplistPublicURL) != "",
+			"default": map[string]any{
+				"disabled":       runtime.Default.Disabled,
+				"address":        runtime.Default.Address,
+				"tokenSet":       strings.TrimSpace(runtime.Default.Token) != "",
+				"publicUrl":      runtime.Default.PublicURL,
+				"publicUrlIsSet": strings.TrimSpace(runtime.Default.PublicURL) != "",
+			},
+			"instances": instances,
 		},
 		"time": time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -291,8 +463,8 @@ type cachedLink struct {
 	expiresAt time.Time
 }
 
-func (h *Handler) fetchLinkCached(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
-	cacheKey := runtime.OplistAddress + "|" + path
+func (h *Handler) fetchLinkCached(ctx context.Context, inst OplistInstance, path string) (linkResponse, error) {
+	cacheKey := inst.Address + "|" + path
 	now := time.Now()
 
 	if cached, ok := h.getCachedLink(cacheKey, now); ok {
@@ -305,7 +477,7 @@ func (h *Handler) fetchLinkCached(ctx context.Context, runtime RuntimeConfig, pa
 			return cached, nil
 		}
 
-		link, err := h.fetchLinkWithRetries(ctx, runtime, path)
+		link, err := h.fetchLinkWithRetries(ctx, inst, path)
 		if err != nil {
 			return linkResponse{}, err
 		}
@@ -321,7 +493,7 @@ func (h *Handler) fetchLinkCached(ctx context.Context, runtime RuntimeConfig, pa
 	return link, nil
 }
 
-func (h *Handler) fetchLinkWithRetries(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
+func (h *Handler) fetchLinkWithRetries(ctx context.Context, inst OplistInstance, path string) (linkResponse, error) {
 	attempts := 1
 	if h.linkRetries > 0 {
 		attempts += h.linkRetries
@@ -329,7 +501,7 @@ func (h *Handler) fetchLinkWithRetries(ctx context.Context, runtime RuntimeConfi
 
 	var last linkResponse
 	for i := 0; i < attempts; i++ {
-		link, err := h.fetchLinkOnce(ctx, runtime, path)
+		link, err := h.fetchLinkOnce(ctx, inst, path)
 		if err != nil {
 			return linkResponse{}, err
 		}
@@ -352,7 +524,7 @@ func (h *Handler) fetchLinkWithRetries(ctx context.Context, runtime RuntimeConfi
 	return last, nil
 }
 
-func (h *Handler) fetchLinkOnce(ctx context.Context, runtime RuntimeConfig, path string) (linkResponse, error) {
+func (h *Handler) fetchLinkOnce(ctx context.Context, inst OplistInstance, path string) (linkResponse, error) {
 	timeout := h.linkTimeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -365,13 +537,13 @@ func (h *Handler) fetchLinkOnce(ctx context.Context, runtime RuntimeConfig, path
 	}{Path: path}
 	body, _ := json.Marshal(payload)
 
-	u := runtime.OplistAddress + "/api/fs/link"
+	u := inst.Address + "/api/fs/link"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
 		return linkResponse{}, err
 	}
 	req.Header.Set("content-type", "application/json;charset=UTF-8")
-	req.Header.Set("authorization", runtime.OplistToken)
+	req.Header.Set("authorization", inst.Token)
 
 	resp, err := h.apiClient.Do(req)
 	if err != nil {
@@ -447,7 +619,7 @@ func isRetryableLinkError(link linkResponse) bool {
 		strings.Contains(msg, "temporary")
 }
 
-func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, originalReq *http.Request, w http.ResponseWriter, depth int) (*http.Response, error) {
+func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, inst OplistInstance, originalReq *http.Request, w http.ResponseWriter, depth int) (*http.Response, error) {
 	if upReq == nil {
 		return nil, errors.New("bad gateway")
 	}
@@ -475,7 +647,7 @@ func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, or
 			return nil, err
 		}
 
-		if isSelfRedirect(nextURL, runtime, originalReq) {
+		if isSelfRedirect(nextURL, inst, originalReq) {
 			if depth >= 8 {
 				return nil, errors.New("redirect loop")
 			}
@@ -524,7 +696,7 @@ func cloneIncomingRequest(orig *http.Request, u *url.URL) *http.Request {
 	return r
 }
 
-func isSelfRedirect(u *url.URL, runtime RuntimeConfig, r *http.Request) bool {
+func isSelfRedirect(u *url.URL, inst OplistInstance, r *http.Request) bool {
 	if u == nil {
 		return false
 	}
@@ -533,8 +705,8 @@ func isSelfRedirect(u *url.URL, runtime RuntimeConfig, r *http.Request) bool {
 		return false
 	}
 
-	if strings.TrimSpace(runtime.OplistPublicURL) != "" {
-		pu, err := url.Parse(runtime.OplistPublicURL)
+	if strings.TrimSpace(inst.PublicURL) != "" {
+		pu, err := url.Parse(inst.PublicURL)
 		if err == nil && pu != nil && strings.EqualFold(pu.Host, u.Host) {
 			return true
 		}
