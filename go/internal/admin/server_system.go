@@ -14,7 +14,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"hazuki-go/internal/proxy/cdnjsproxy"
+	"hazuki-go/internal/rediscache"
 	"hazuki-go/internal/storage"
 )
 
@@ -354,8 +354,21 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 				Notice:       notice,
 				Error:        err.Error(),
 			},
+			Namespace:     rediscache.Cdnjs.Key,
+			MarkerKey:     rediscache.MarkerKey,
+			MarkerValue:   rediscache.MarkerValue,
+			IndexKey:      rediscache.Cdnjs.IndexKey,
+			Limit:         100,
+			Page:          1,
+			ClearableDesc: rediscache.Cdnjs.Prefix + "*",
 		})
 		return
+	}
+
+	nsKey := strings.TrimSpace(r.URL.Query().Get("ns"))
+	ns, ok := rediscache.NamespaceByKey(nsKey)
+	if !ok {
+		ns = rediscache.Cdnjs
 	}
 
 	redisSt := checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
@@ -368,13 +381,14 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 			Notice:       notice,
 			Error:        errMsg,
 		},
+		Namespace:     ns.Key,
 		Redis:         redisSt,
-		MarkerKey:     cdnjsproxy.RedisMarkerKey,
-		MarkerValue:   cdnjsproxy.RedisMarkerValue,
-		IndexKey:      cdnjsproxy.RedisIndexKey,
+		MarkerKey:     rediscache.MarkerKey,
+		MarkerValue:   rediscache.MarkerValue,
+		IndexKey:      ns.IndexKey,
 		Limit:         100,
 		Page:          1,
-		ClearableDesc: cdnjsproxy.RedisPrefix + "*",
+		ClearableDesc: ns.Prefix + "*",
 	}
 
 	if redisSt.Status != "ok" {
@@ -405,12 +419,12 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
-	marker, err := client.Get(ctx, cdnjsproxy.RedisMarkerKey).Result()
+	marker, err := client.Get(ctx, rediscache.MarkerKey).Result()
 	if err == nil && strings.TrimSpace(marker) != "" {
 		data.MarkerPresent = true
 	}
 
-	total, err := client.ZCard(ctx, cdnjsproxy.RedisIndexKey).Result()
+	total, err := client.ZCard(ctx, ns.IndexKey).Result()
 	if err != nil {
 		data.Error = s.t(r, "redisCache.errorRedis")
 		s.render(w, r, data)
@@ -422,7 +436,7 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 
 	start := int64((page - 1) * limit)
 	stop := start + int64(limit) - 1
-	ids, err := client.ZRevRange(ctx, cdnjsproxy.RedisIndexKey, start, stop).Result()
+	ids, err := client.ZRevRange(ctx, ns.IndexKey, start, stop).Result()
 	if err != nil {
 		data.Error = s.t(r, "redisCache.errorRedis")
 		s.render(w, r, data)
@@ -433,8 +447,8 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 	metaCmds := make([]*redis.MapStringStringCmd, 0, len(ids))
 	ttlCmds := make([]*redis.DurationCmd, 0, len(ids))
 	for _, id := range ids {
-		metaCmds = append(metaCmds, pipe.HGetAll(ctx, cdnjsproxy.RedisPrefix+"meta:"+id))
-		ttlCmds = append(ttlCmds, pipe.TTL(ctx, cdnjsproxy.RedisPrefix+"body:"+id))
+		metaCmds = append(metaCmds, pipe.HGetAll(ctx, rediscache.MetaKey(ns, id)))
+		ttlCmds = append(ttlCmds, pipe.TTL(ctx, rediscache.BodyKey(ns, id)))
 	}
 	_, _ = pipe.Exec(ctx)
 
@@ -487,7 +501,7 @@ func (s *server) redisCache(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: prune stale index entries (expired keys).
 	if len(stale) > 0 {
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		_, _ = client.ZRem(ctx2, cdnjsproxy.RedisIndexKey, stale...).Result()
+		_, _ = client.ZRem(ctx2, ns.IndexKey, stale...).Result()
 		cancel2()
 	}
 
@@ -500,15 +514,25 @@ func (s *server) redisCacheClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/system/redis-cache?err=bad", http.StatusFound)
+		return
+	}
+	nsKey := strings.TrimSpace(r.FormValue("ns"))
+	ns, ok := rediscache.NamespaceByKey(nsKey)
+	if !ok {
+		ns = rediscache.Cdnjs
+	}
+
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=redis", http.StatusFound)
 		return
 	}
 
 	client, _, ok := newRedisAdminClient(cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
 	if !ok || client == nil {
-		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=redis", http.StatusFound)
 		return
 	}
 	defer func() { _ = client.Close() }()
@@ -519,9 +543,9 @@ func (s *server) redisCacheClear(w http.ResponseWriter, r *http.Request) {
 	var deleted int64
 	cursor := uint64(0)
 	for {
-		keys, next, err := client.Scan(ctx, cursor, cdnjsproxy.RedisPrefix+"*", 500).Result()
+		keys, next, err := client.Scan(ctx, cursor, ns.Prefix+"*", 500).Result()
 		if err != nil {
-			http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+			http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=redis", http.StatusFound)
 			return
 		}
 		if len(keys) > 0 {
@@ -534,7 +558,7 @@ func (s *server) redisCacheClear(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/system/redis-cache?ok=cleared&n="+url.QueryEscape(strconv.FormatInt(deleted, 10)), http.StatusFound)
+	http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&ok=cleared&n="+url.QueryEscape(strconv.FormatInt(deleted, 10)), http.StatusFound)
 }
 
 func (s *server) redisCacheDelete(w http.ResponseWriter, r *http.Request) {
@@ -546,21 +570,29 @@ func (s *server) redisCacheDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/system/redis-cache?err=bad", http.StatusFound)
 		return
 	}
+	nsKey := strings.TrimSpace(r.FormValue("ns"))
+	ns, ok := rediscache.NamespaceByKey(nsKey)
+	if !ok {
+		ns = rediscache.Cdnjs
+	}
+	pageRaw := strings.TrimSpace(r.FormValue("page"))
+	limitRaw := strings.TrimSpace(r.FormValue("limit"))
+
 	id := strings.TrimSpace(r.FormValue("id"))
 	if id == "" {
-		http.Redirect(w, r, "/system/redis-cache?err=bad", http.StatusFound)
+		http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=bad", http.StatusFound)
 		return
 	}
 
 	cfg, err := s.config.GetDecryptedConfig()
 	if err != nil {
-		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=redis", http.StatusFound)
 		return
 	}
 
 	client, _, ok := newRedisAdminClient(cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port)
 	if !ok || client == nil {
-		http.Redirect(w, r, "/system/redis-cache?err=redis", http.StatusFound)
+		http.Redirect(w, r, "/system/redis-cache?ns="+url.QueryEscape(ns.Key)+"&err=redis", http.StatusFound)
 		return
 	}
 	defer func() { _ = client.Close() }()
@@ -568,8 +600,15 @@ func (s *server) redisCacheDelete(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
-	_, _ = client.Del(ctx, cdnjsproxy.RedisPrefix+"body:"+id, cdnjsproxy.RedisPrefix+"type:"+id, cdnjsproxy.RedisPrefix+"meta:"+id).Result()
-	_, _ = client.ZRem(ctx, cdnjsproxy.RedisIndexKey, id).Result()
+	_, _ = client.Del(ctx, rediscache.BodyKey(ns, id), rediscache.TypeKey(ns, id), rediscache.MetaKey(ns, id)).Result()
+	_, _ = client.ZRem(ctx, ns.IndexKey, id).Result()
 
-	http.Redirect(w, r, "/system/redis-cache?ok=deleted", http.StatusFound)
+	redirectURL := "/system/redis-cache?ns=" + url.QueryEscape(ns.Key) + "&ok=deleted"
+	if pageRaw != "" {
+		redirectURL += "&page=" + url.QueryEscape(pageRaw)
+	}
+	if limitRaw != "" {
+		redirectURL += "&limit=" + url.QueryEscape(limitRaw)
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }

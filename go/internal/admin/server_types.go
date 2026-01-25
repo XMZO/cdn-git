@@ -124,6 +124,11 @@ type torcherinoData struct {
 	WorkerSecretHeadersCsvValue    string
 	WorkerSecretHeaderMapJSONValue string
 
+	RedisCacheEnabled                bool
+	RedisCacheMaxBodyBytesValue      string
+	RedisCacheDefaultTTLSecondsValue string
+	RedisCacheMaxTTLSecondsValue     string
+
 	TorcherinoBaseURL   string
 	TorcherinoHealthURL string
 	TorcherinoStatus    serviceStatus
@@ -229,6 +234,8 @@ type redisCacheData struct {
 	layoutData
 
 	Redis redisStatus
+
+	Namespace string
 
 	MarkerKey     string
 	MarkerValue   string

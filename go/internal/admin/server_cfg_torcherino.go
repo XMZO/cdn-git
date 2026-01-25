@@ -33,7 +33,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("ok") != "" {
 			notice = s.t(r, "common.saved")
 		}
-		s.renderTorcherinoForm(w, r, st, cfg, notice, "", strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "")
+		s.renderTorcherinoForm(w, r, st, cfg, notice, "", strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "", cfg.Torcherino.RedisCache.Enabled, "", "", "")
 		return
 	case http.MethodPost:
 		// continue
@@ -43,7 +43,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderTorcherinoForm(w, r, st, cfg, "", s.t(r, "error.badRequest"), strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "")
+		s.renderTorcherinoForm(w, r, st, cfg, "", s.t(r, "error.badRequest"), strconv.Itoa(cfg.Ports.Torcherino), "", "", "", "", cfg.Torcherino.RedisCache.Enabled, "", "", "")
 		return
 	}
 
@@ -57,7 +57,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", "HOST_MAPPING: "+err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"))
+		s.renderTorcherinoForm(w, r, st, draft, "", "HOST_MAPPING: "+err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"), parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
 		return
 	}
 
@@ -70,7 +70,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"))
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"), parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
 		return
 	}
 
@@ -82,18 +82,77 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
 		return
 	}
 
 	portRaw := strings.TrimSpace(r.FormValue("torcherinoPort"))
+	redisCacheEnabled := parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled)
+	maxBodyBytesRaw := strings.TrimSpace(r.FormValue("redisCacheMaxBodyBytes"))
+	defaultTTLRaw := strings.TrimSpace(r.FormValue("redisCacheDefaultTTLSeconds"))
+	maxTTLRaw := strings.TrimSpace(r.FormValue("redisCacheMaxTTLSeconds"))
+
+	const maxCacheBodyBytes = 10 * 1024 * 1024
+	const maxTTLSeconds = 315360000 // 10 years
+
+	maxBodyBytes := 0
+	if maxBodyBytesRaw != "" {
+		n, err := strconv.Atoi(maxBodyBytesRaw)
+		if err != nil || n < 0 || n > maxCacheBodyBytes {
+			draft := cfg
+			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.DefaultTarget = defaultTarget
+			draft.Torcherino.HostMapping = hostMapping
+			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheMaxBytesRange", maxCacheBodyBytes), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
+			return
+		}
+		maxBodyBytes = n
+	}
+
+	defaultTTLSeconds := 0
+	if defaultTTLRaw != "" {
+		n, err := strconv.Atoi(defaultTTLRaw)
+		if err != nil || n < 0 || n > maxTTLSeconds {
+			draft := cfg
+			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.DefaultTarget = defaultTarget
+			draft.Torcherino.HostMapping = hostMapping
+			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheTTLRange", maxTTLSeconds), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
+			return
+		}
+		defaultTTLSeconds = n
+	}
+
+	maxTTLSecondsValue := 0
+	if maxTTLRaw != "" {
+		n, err := strconv.Atoi(maxTTLRaw)
+		if err != nil || n < 0 || n > maxTTLSeconds {
+			draft := cfg
+			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.DefaultTarget = defaultTarget
+			draft.Torcherino.HostMapping = hostMapping
+			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheTTLRange", maxTTLSeconds), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
+			return
+		}
+		maxTTLSecondsValue = n
+	}
+
+	if maxTTLSecondsValue > 0 && defaultTTLSeconds > 0 && maxTTLSecondsValue < defaultTTLSeconds {
+		draft := cfg
+		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.DefaultTarget = defaultTarget
+		draft.Torcherino.HostMapping = hostMapping
+		s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheMaxTTLTooSmall"), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
+		return
+	}
+
 	port, err := parsePort(portRaw, cfg.Ports.Torcherino)
 	if err != nil {
 		draft := cfg
 		draft.Torcherino.Disabled = !serviceEnabled
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
-		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
 		return
 	}
 
@@ -118,6 +177,10 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 			next.Torcherino.DefaultTarget = defaultTarget
 			next.Torcherino.HostMapping = hostMapping
 			next.Torcherino.WorkerSecretHeaders = workerSecretHeaders
+			next.Torcherino.RedisCache.Enabled = redisCacheEnabled
+			next.Torcherino.RedisCache.MaxBodyBytes = maxBodyBytes
+			next.Torcherino.RedisCache.DefaultTTLSeconds = defaultTTLSeconds
+			next.Torcherino.RedisCache.MaxTTLSeconds = maxTTLSecondsValue
 			if clearWorkerSecretKey {
 				next.Torcherino.WorkerSecretKey = ""
 			} else {
@@ -135,14 +198,18 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		draft.Torcherino.HostMapping = hostMapping
 		draft.Torcherino.WorkerSecretHeaders = workerSecretHeaders
 		draft.Torcherino.WorkerSecretHeaderMap = mergedHeaderMap
-		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw)
+		draft.Torcherino.RedisCache.Enabled = redisCacheEnabled
+		draft.Torcherino.RedisCache.MaxBodyBytes = maxBodyBytes
+		draft.Torcherino.RedisCache.DefaultTTLSeconds = defaultTTLSeconds
+		draft.Torcherino.RedisCache.MaxTTLSeconds = maxTTLSecondsValue
+		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
 		return
 	}
 
 	http.Redirect(w, r, "/config/torcherino?ok=1", http.StatusFound)
 }
 
-func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, torcherinoPortValue, defaultTargetValue, hostMappingJSONValue, workerSecretHeadersValue, workerSecretHeaderMapJSONValue string) {
+func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st *reqState, cfg model.AppConfig, notice, errMsg, torcherinoPortValue, defaultTargetValue, hostMappingJSONValue, workerSecretHeadersValue, workerSecretHeaderMapJSONValue string, redisCacheEnabled bool, redisCacheMaxBodyBytesValue, redisCacheDefaultTTLSecondsValue, redisCacheMaxTTLSecondsValue string) {
 	if strings.TrimSpace(torcherinoPortValue) == "" {
 		torcherinoPortValue = strconv.Itoa(cfg.Ports.Torcherino)
 	}
@@ -167,6 +234,22 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 	if strings.TrimSpace(workerSecretHeaderMapJSONValue) == "" {
 		pretty, _ := json.MarshalIndent(redacted.Torcherino.WorkerSecretHeaderMap, "", "  ")
 		workerSecretHeaderMapJSONValue = string(pretty)
+	}
+
+	if strings.TrimSpace(redisCacheMaxBodyBytesValue) == "" {
+		if cfg.Torcherino.RedisCache.MaxBodyBytes > 0 {
+			redisCacheMaxBodyBytesValue = strconv.Itoa(cfg.Torcherino.RedisCache.MaxBodyBytes)
+		}
+	}
+	if strings.TrimSpace(redisCacheDefaultTTLSecondsValue) == "" {
+		if cfg.Torcherino.RedisCache.DefaultTTLSeconds > 0 {
+			redisCacheDefaultTTLSecondsValue = strconv.Itoa(cfg.Torcherino.RedisCache.DefaultTTLSeconds)
+		}
+	}
+	if strings.TrimSpace(redisCacheMaxTTLSecondsValue) == "" {
+		if cfg.Torcherino.RedisCache.MaxTTLSeconds > 0 {
+			redisCacheMaxTTLSecondsValue = strconv.Itoa(cfg.Torcherino.RedisCache.MaxTTLSeconds)
+		}
 	}
 
 	baseURL := baseURLForPort(r, cfg.Ports.Torcherino)
@@ -198,6 +281,11 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 		WorkerSecretKeyValue:           workerSecretKeyValue,
 		WorkerSecretHeadersCsvValue:    workerSecretHeadersValue,
 		WorkerSecretHeaderMapJSONValue: workerSecretHeaderMapJSONValue,
+
+		RedisCacheEnabled:                redisCacheEnabled,
+		RedisCacheMaxBodyBytesValue:      redisCacheMaxBodyBytesValue,
+		RedisCacheDefaultTTLSecondsValue: redisCacheDefaultTTLSecondsValue,
+		RedisCacheMaxTTLSecondsValue:     redisCacheMaxTTLSecondsValue,
 
 		TorcherinoBaseURL:   baseURL,
 		TorcherinoHealthURL: "/_hazuki/health/torcherino",

@@ -124,6 +124,40 @@
         </div>
       </details>
 
+      <details class="card accordion" open>
+        <summary>{{.T "torcherino.redisCacheTitle"}} <span class="muted small">{{.T "common.optionalTag"}}</span></summary>
+        <div class="body">
+          <div class="muted small">{{.T "torcherino.redisCacheHint"}}</div>
+          <div class="grid cols-2" style="margin-top:10px;">
+            <div class="field">
+              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+                <input type="checkbox" name="redisCacheEnabled" {{if .RedisCacheEnabled}}checked{{end}} />
+                <input type="hidden" name="redisCacheEnabled" value="0" />
+                {{.T "torcherino.redisCacheEnabledLabel"}}
+              </label>
+            </div>
+            <div class="field">
+              <label>{{.T "torcherino.redisCacheMaxBodyBytesLabel"}}</label>
+              <input type="text" name="redisCacheMaxBodyBytes" value="{{.RedisCacheMaxBodyBytesValue}}" placeholder="524288" />
+              <div class="hint">{{.T "torcherino.redisCacheMaxBodyBytesHint"}}</div>
+            </div>
+          </div>
+
+          <div class="grid cols-2">
+            <div class="field">
+              <label>{{.T "torcherino.redisCacheDefaultTTLSecondsLabel"}}</label>
+              <input type="text" name="redisCacheDefaultTTLSeconds" value="{{.RedisCacheDefaultTTLSecondsValue}}" placeholder="0" />
+              <div class="hint">{{.T "torcherino.redisCacheDefaultTTLSecondsHint"}}</div>
+            </div>
+            <div class="field">
+              <label>{{.T "torcherino.redisCacheMaxTTLSecondsLabel"}}</label>
+              <input type="text" name="redisCacheMaxTTLSeconds" value="{{.RedisCacheMaxTTLSecondsValue}}" placeholder="86400" />
+              <div class="hint">{{.T "torcherino.redisCacheMaxTTLSecondsHint"}}</div>
+            </div>
+          </div>
+        </div>
+      </details>
+
       <div class="card">
         <h3>{{.T "common.save"}}</h3>
         <div class="btn-row">

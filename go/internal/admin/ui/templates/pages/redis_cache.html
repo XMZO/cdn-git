@@ -5,6 +5,10 @@
       <div class="muted small">{{.T "redisCache.subtitle"}}</div>
       <div class="btn-row">
         <a class="btn" href="/system">{{.T "nav.system"}}</a>
+        <span class="spacer"></span>
+        <span class="muted small">{{.T "redisCache.namespaceLabel"}}：</span>
+        <a class="btn {{if eq .Namespace "cdnjs"}}primary{{end}}" href="/system/redis-cache?ns=cdnjs&limit={{.Limit}}">{{.T "redisCache.namespace.cdnjs"}}</a>
+        <a class="btn {{if eq .Namespace "torcherino"}}primary{{end}}" href="/system/redis-cache?ns=torcherino&limit={{.Limit}}">{{.T "redisCache.namespace.torcherino"}}</a>
       </div>
     </div>
 
@@ -56,6 +60,7 @@
         <h3>{{.T "redisCache.actions"}}</h3>
         <div class="muted small">{{.T "redisCache.clearHint"}} <code>{{.ClearableDesc}}</code></div>
         <form method="post" action="/system/redis-cache/clear" style="margin-top:12px;">
+          <input type="hidden" name="ns" value="{{.Namespace}}" />
           <button
             class="btn danger"
             type="submit"
@@ -102,6 +107,9 @@
                     <td>
                       <form method="post" action="/system/redis-cache/delete" style="margin:0;">
                         <input type="hidden" name="id" value="{{.ID}}" />
+                        <input type="hidden" name="ns" value="{{$.Namespace}}" />
+                        <input type="hidden" name="page" value="{{$.Page}}" />
+                        <input type="hidden" name="limit" value="{{$.Limit}}" />
                         <button class="btn" type="submit">{{$.T "redisCache.deleteOne"}}</button>
                       </form>
                     </td>
@@ -113,13 +121,13 @@
 
           <div class="btn-row" style="margin-top:12px;">
             {{if .HasPrev}}
-              <a class="btn" href="/system/redis-cache?page={{.PrevPage}}&limit={{.Limit}}">{{.T "common.prev"}}</a>
+              <a class="btn" href="/system/redis-cache?page={{.PrevPage}}&limit={{.Limit}}&ns={{.Namespace}}">{{.T "common.prev"}}</a>
             {{else}}
               <span class="btn" style="opacity:.5; pointer-events:none;">{{.T "common.prev"}}</span>
             {{end}}
 
             {{if .HasNext}}
-              <a class="btn" href="/system/redis-cache?page={{.NextPage}}&limit={{.Limit}}">{{.T "common.next"}}</a>
+              <a class="btn" href="/system/redis-cache?page={{.NextPage}}&limit={{.Limit}}&ns={{.Namespace}}">{{.T "common.next"}}</a>
             {{else}}
               <span class="btn" style="opacity:.5; pointer-events:none;">{{.T "common.next"}}</span>
             {{end}}

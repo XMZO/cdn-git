@@ -77,12 +77,27 @@ type GitInstanceConfig struct {
 }
 
 type TorcherinoConfig struct {
-	Disabled              bool              `json:"disabled,omitempty"`
-	DefaultTarget         string            `json:"defaultTarget"`
-	HostMapping           map[string]string `json:"hostMapping"`
-	WorkerSecretKey       string            `json:"workerSecretKey"`
-	WorkerSecretHeaders   []string          `json:"workerSecretHeaders"`
-	WorkerSecretHeaderMap map[string]string `json:"workerSecretHeaderMap"`
+	Disabled              bool                       `json:"disabled,omitempty"`
+	DefaultTarget         string                     `json:"defaultTarget"`
+	HostMapping           map[string]string          `json:"hostMapping"`
+	WorkerSecretKey       string                     `json:"workerSecretKey"`
+	WorkerSecretHeaders   []string                   `json:"workerSecretHeaders"`
+	WorkerSecretHeaderMap map[string]string          `json:"workerSecretHeaderMap"`
+	RedisCache            TorcherinoRedisCacheConfig `json:"redisCache,omitempty"`
+}
+
+type TorcherinoRedisCacheConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MaxBodyBytes limits the cached response size. 0 means "use built-in default".
+	MaxBodyBytes int `json:"maxBodyBytes,omitempty"`
+
+	// DefaultTTLSeconds is used when upstream has no explicit max-age.
+	// 0 means "only cache when upstream max-age is present".
+	DefaultTTLSeconds int `json:"defaultTTLSeconds,omitempty"`
+
+	// MaxTTLSeconds caps the cache TTL. 0 means "use built-in default".
+	MaxTTLSeconds int `json:"maxTTLSeconds,omitempty"`
 }
 
 type SakuyaConfig struct {
@@ -253,7 +268,8 @@ func (c AppConfig) Validate() error {
 	if c.Version != 1 {
 		return fmt.Errorf("unsupported version: %d", c.Version)
 	}
-	const maxTTLSeconds = 315360000 // 10 years
+	const maxTTLSeconds = 315360000                      // 10 years
+	const maxTorcherinoCacheBodyBytes = 10 * 1024 * 1024 // 10 MiB
 	for _, p := range []struct {
 		name string
 		val  int
@@ -332,6 +348,19 @@ func (c AppConfig) Validate() error {
 	ghUserPolicy := strings.ToLower(strings.TrimSpace(c.Cdnjs.GhUserPolicy))
 	if ghUserPolicy != "" && ghUserPolicy != "allowlist" && ghUserPolicy != "denylist" {
 		return errors.New("cdnjs.ghUserPolicy must be 'allowlist' or 'denylist'")
+	}
+	if c.Torcherino.RedisCache.MaxBodyBytes < 0 || c.Torcherino.RedisCache.MaxBodyBytes > maxTorcherinoCacheBodyBytes {
+		return fmt.Errorf("torcherino.redisCache.maxBodyBytes must be 0-%d", maxTorcherinoCacheBodyBytes)
+	}
+	if c.Torcherino.RedisCache.DefaultTTLSeconds < 0 || c.Torcherino.RedisCache.DefaultTTLSeconds > maxTTLSeconds {
+		return fmt.Errorf("torcherino.redisCache.defaultTTLSeconds must be 0-%d", maxTTLSeconds)
+	}
+	if c.Torcherino.RedisCache.MaxTTLSeconds < 0 || c.Torcherino.RedisCache.MaxTTLSeconds > maxTTLSeconds {
+		return fmt.Errorf("torcherino.redisCache.maxTTLSeconds must be 0-%d", maxTTLSeconds)
+	}
+	if c.Torcherino.RedisCache.MaxTTLSeconds > 0 && c.Torcherino.RedisCache.DefaultTTLSeconds > 0 &&
+		c.Torcherino.RedisCache.MaxTTLSeconds < c.Torcherino.RedisCache.DefaultTTLSeconds {
+		return errors.New("torcherino.redisCache.maxTTLSeconds must be >= torcherino.redisCache.defaultTTLSeconds")
 	}
 	if c.Cdnjs.DefaultTTLSeconds < 0 || c.Cdnjs.DefaultTTLSeconds > maxTTLSeconds {
 		return fmt.Errorf("cdnjs.defaultTTLSeconds must be 0-%d", maxTTLSeconds)
