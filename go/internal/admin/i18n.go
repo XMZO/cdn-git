@@ -106,6 +106,7 @@ func init() {
 		"sakuya.oplist.tokenLabel":     "Token",
 		"sakuya.oplist.tokenHint":      "同时用于 Authorization 与签名密钥（HMAC-SHA256）。",
 		"sakuya.oplist.copyExample":    "复制示例地址",
+		"sakuya.oplist.exampleUrlLabel": "示例地址",
 
 		"sakuya.instances.current":         "当前实例",
 		"sakuya.instances.title":           "实例",
@@ -730,6 +731,7 @@ func init() {
 		"sakuya.oplist.tokenLabel":     "Token",
 		"sakuya.oplist.tokenHint":      "Used for both Authorization and HMAC-SHA256 signing.",
 		"sakuya.oplist.copyExample":    "Copy example URL",
+		"sakuya.oplist.exampleUrlLabel": "Example URL",
 
 		"sakuya.instances.current":         "Current instance",
 		"sakuya.instances.title":           "Instances",

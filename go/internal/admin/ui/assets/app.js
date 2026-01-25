@@ -1207,6 +1207,7 @@
     if (!skipNav) updateNavActive(pathname);
     updateThemeToggle();
     applyTimeFormatting();
+    updateSakuyaExampleUrls();
     updateGitPreview();
     updateCdnjsPreview();
     updateTorcherinoPreview();
@@ -1657,6 +1658,28 @@
     return [s.slice(0, idx), s.slice(idx)];
   };
 
+  const stripLastUrlPathSegment = (raw) => {
+    const s = (raw || "").toString().trim();
+    if (!s) return "";
+    try {
+      const u = new URL(s, window.location.href);
+      const parts = (u.pathname || "").split("/").filter((p) => p && p.trim() !== "");
+      if (parts.length <= 1) {
+        u.pathname = "";
+      } else {
+        parts.pop();
+        u.pathname = "/" + parts.join("/");
+      }
+      u.search = "";
+      u.hash = "";
+      return u.toString();
+    } catch {
+      const idx = s.lastIndexOf("/");
+      if (idx <= 0) return s;
+      return s.slice(0, idx);
+    }
+  };
+
   const sanitizePathSegment = (raw) => {
     let out = (raw || "").toString().trim();
     while (out.startsWith("/") || out.startsWith("\\")) out = out.slice(1);
@@ -1664,33 +1687,38 @@
     return out;
   };
 
-  const buildSakuyaExampleUrl = (btn) => {
-    if (!(btn instanceof Element)) return "";
-    const form = btn.closest("form") || document;
+  const buildSakuyaExampleUrl = (el) => {
+    if (!(el instanceof Element)) return "";
+    const form = el.closest("form") || document;
 
     const pubEl = qs('input[name="oplistPublicUrl"]', form);
     const prefixEl = qs('input[name="oplistPrefix"]', form);
     const baseEl = qs("[data-sakuya-base-url]");
 
     let rawBase = ((pubEl && pubEl.value) || "").toString().trim();
+    const isUsingFallbackBase = !rawBase;
     if (!rawBase) rawBase = ((baseEl && baseEl.textContent) || "").toString().trim();
     if (!rawBase) return "";
 
-    let suffix = "";
-    [rawBase, suffix] = splitUrlSuffix(rawBase);
+    let urlSuffix = "";
+    [rawBase, urlSuffix] = splitUrlSuffix(rawBase);
+
+    if (isUsingFallbackBase && prefixEl instanceof HTMLInputElement) {
+      rawBase = stripLastUrlPathSegment(rawBase);
+    }
     let base = sanitizeUrlBase(rawBase);
 
     let prefix = sanitizePathSegment(prefixEl && prefixEl.value);
 
     if (prefix) {
-      const suffix = "/" + prefix;
-      if (!base.toLowerCase().endsWith(suffix.toLowerCase())) {
-        base += suffix;
+      const prefixPath = "/" + prefix;
+      if (!base.toLowerCase().endsWith(prefixPath.toLowerCase())) {
+        base += prefixPath;
       }
     }
 
     base = sanitizeUrlBase(base);
-    return base + suffix;
+    return base + urlSuffix;
   };
 
   const onSakuyaCopyExampleClick = (e) => {
@@ -1706,6 +1734,16 @@
       if (!ok) return;
       flashCopied(btn);
     });
+  };
+
+  const updateSakuyaExampleUrls = () => {
+    for (const el of qsa("[data-sakuya-example-url]")) {
+      const url = buildSakuyaExampleUrl(el);
+      const out = (url || "").toString().trim();
+      el.textContent = out || "-";
+      if (out) el.setAttribute("title", out);
+      else el.removeAttribute("title");
+    }
   };
 
   const onCopyClick = (e) => {
@@ -1762,6 +1800,11 @@
 
     const name = (t.getAttribute("name") || "").trim();
     const id = (t.getAttribute("id") || "").trim();
+
+    if (name === "oplistPublicUrl" || name === "oplistPrefix") {
+      updateSakuyaExampleUrls();
+      return;
+    }
 
     if (id === "gitPreviewPath" || name === "upstream" || name === "upstreamPath" || name === "upstreamHttps") {
       updateGitPreview();
