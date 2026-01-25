@@ -533,6 +533,7 @@ body.hz-modal-open {
 }
 
 .btn {
+  font: inherit;
   display: inline-flex;
   align-items: center;
   justify-content: center;
