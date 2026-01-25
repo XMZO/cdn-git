@@ -9,39 +9,27 @@
         {{if .SakuyaStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}{{end}}
         <a class="btn" href="{{.SakuyaHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
       </div>
+      <form class="btn-row" method="post" action="/config/sakuya/oplist" style="margin-top:10px;">
+        <input type="hidden" name="action" value="updateGlobal" />
+        <input type="hidden" name="returnInstance" value="{{.CurrentInstanceID}}" />
+
+        <label class="pill" style="font-weight:900;" title="{{.T "sakuya.globalHint"}}">
+          <input type="checkbox" name="sakuyaEnabled" {{if .SakuyaEnabled}}checked{{end}} style="width:14px; height:14px; margin:0;" />
+          <input type="hidden" name="sakuyaEnabled" value="0" />
+          {{.T "sakuya.globalSwitchShort"}}
+        </label>
+
+        <label class="pill" style="font-weight:900; display:flex; gap:6px; align-items:center;" title="{{.T "common.modifiedPortRestart"}}">
+          {{.T "common.port"}}：
+          <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" style="width:88px; padding:4px 8px; border-radius:999px;" />
+        </label>
+
+        <button class="btn" type="submit">{{.T "common.save"}}</button>
+      </form>
       {{if and (eq .SakuyaStatus.Status "error") .SakuyaStatus.Error}}
         <div class="muted small" style="margin-top:10px;">{{.T "common.healthErrorPrefix"}}：{{.SakuyaStatus.Error}}</div>
       {{end}}
     </div>
-
-    <form class="form" method="post" action="/config/sakuya/oplist">
-      <input type="hidden" name="action" value="updateGlobal" />
-      <input type="hidden" name="returnInstance" value="{{.CurrentInstanceID}}" />
-
-      <div class="card">
-        <h3>{{.T "sakuya.globalLabel"}}</h3>
-        <div class="muted small">{{.T "sakuya.globalHint"}}</div>
-
-        <div class="grid cols-2" style="margin-top:12px;">
-          <div class="field">
-            <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
-              <input type="checkbox" name="sakuyaEnabled" {{if .SakuyaEnabled}}checked{{end}} />
-              <input type="hidden" name="sakuyaEnabled" value="0" />
-              {{.T "common.enableService"}} <span class="key">sakuya.disabled</span>
-            </label>
-          </div>
-          <div class="field">
-            <label>{{.T "common.port"}} <span class="key">ports.sakuya</span></label>
-            <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" />
-            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
-          </div>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
-        </div>
-      </div>
-    </form>
 
     <div class="card">
       <h3>{{.T "sakuya.instances.title"}}</h3>
@@ -188,10 +176,7 @@
           </label>
           <div class="hint">{{.T "sakuya.serviceToggleHint"}}</div>
         </div>
-      </div>
 
-      <div class="card">
-        <h3>{{.T "common.save"}}</h3>
         <div class="btn-row">
           <button class="btn primary" type="submit">{{.T "common.save"}}</button>
         </div>

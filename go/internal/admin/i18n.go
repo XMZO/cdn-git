@@ -91,6 +91,7 @@ func init() {
 
 		"sakuya.serviceToggleHint": "未启用时不会监听端口；保存后立即生效。",
 		"sakuya.globalLabel":       "总开关（暂停/启用）",
+		"sakuya.globalSwitchShort": "总开关",
 		"sakuya.globalHint":        "关闭后 Sakuya 会停止监听端口，所有实例暂停；各实例配置与开关会保留。",
 
 		"sakuya.oplist.tagline":        "（OpenList 直链加速）",
@@ -691,6 +692,7 @@ func init() {
 
 		"sakuya.serviceToggleHint": "When disabled, the service stops listening immediately.",
 		"sakuya.globalLabel":       "Global switch (pause/enable)",
+		"sakuya.globalSwitchShort": "Global switch",
 		"sakuya.globalHint":        "When disabled, Sakuya stops listening and all instances are paused; instance configs/toggles are preserved.",
 
 		"sakuya.oplist.tagline":        "OpenList link accelerator",
