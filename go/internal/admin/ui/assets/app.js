@@ -1633,6 +1633,64 @@
     copyTimers.set(el, t);
   };
 
+  const trimRight = (s, ch) => {
+    let out = (s || "").toString();
+    while (out.endsWith(ch)) out = out.slice(0, -ch.length);
+    return out;
+  };
+
+  const sanitizeUrlBase = (raw) => {
+    let out = (raw || "").toString().trim();
+    out = trimRight(out, "/");
+    return out;
+  };
+
+  const sanitizePathSegment = (raw) => {
+    let out = (raw || "").toString().trim();
+    while (out.startsWith("/") || out.startsWith("\\")) out = out.slice(1);
+    while (out.endsWith("/") || out.endsWith("\\")) out = out.slice(0, -1);
+    return out;
+  };
+
+  const buildSakuyaExampleUrl = (btn) => {
+    if (!(btn instanceof Element)) return "";
+    const form = btn.closest("form") || document;
+
+    const pubEl = qs('input[name="oplistPublicUrl"]', form);
+    const prefixEl = qs('input[name="oplistPrefix"]', form);
+    const baseEl = qs("[data-sakuya-base-url]");
+
+    let base = sanitizeUrlBase(pubEl && pubEl.value);
+    if (!base) base = sanitizeUrlBase(baseEl && baseEl.textContent);
+
+    let prefix = sanitizePathSegment(prefixEl && prefixEl.value);
+
+    if (prefix) {
+      const suffix = "/" + prefix;
+      if (!base.toLowerCase().endsWith(suffix.toLowerCase())) {
+        base += suffix;
+      }
+    }
+
+    base = sanitizeUrlBase(base);
+    return base;
+  };
+
+  const onSakuyaCopyExampleClick = (e) => {
+    const btn = e.target instanceof Element ? e.target.closest("[data-sakuya-copy-example]") : null;
+    if (!btn) return;
+
+    e.preventDefault();
+
+    const url = buildSakuyaExampleUrl(btn);
+    if (!url) return;
+
+    copyText(url).then((ok) => {
+      if (!ok) return;
+      flashCopied(btn);
+    });
+  };
+
   const onCopyClick = (e) => {
     const el = e.target instanceof Element ? e.target.closest("[data-hz-copy]") : null;
     if (!el) return;
@@ -1718,6 +1776,7 @@
   document.addEventListener("change", onTogglePassword);
   document.addEventListener("click", onConfirmSubmitClick);
   document.addEventListener("click", onThemeToggleClick);
+  document.addEventListener("click", onSakuyaCopyExampleClick);
   document.addEventListener("click", onCopyClick);
   document.addEventListener("click", onLinkClick);
   document.addEventListener("input", onPreviewInput);

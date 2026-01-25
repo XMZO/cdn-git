@@ -5,7 +5,7 @@
       <div class="muted small">{{.T "sakuya.oplist.subtitle"}}</div>
       <div class="btn-row" style="margin-top:10px;">
         <span class="pill">{{.T "sakuya.instances.current"}}：<code>{{if .CurrentInstanceID}}{{.CurrentInstanceID}}{{else}}default{{end}}</code>{{if .CurrentInstanceName}} · {{.CurrentInstanceName}}{{end}}</span>
-        <span class="pill">{{.T "common.serviceUrl"}}：<code>{{.SakuyaBaseURL}}</code></span>
+        <span class="pill">{{.T "common.serviceUrl"}}：<code data-sakuya-base-url>{{.SakuyaBaseURL}}</code></span>
         {{if .SakuyaStatus.Status}}{{template "serviceStatusPill" (statusCtx $ .SakuyaStatus)}}{{end}}
         <a class="btn" href="{{.SakuyaHealthURL}}" target="_blank" rel="noreferrer">{{.T "common.openHealth"}}</a>
       </div>
@@ -50,7 +50,7 @@
             {{range .Instances}}
               <tr>
                 <td>{{.Name}}</td>
-                <td>{{if .Prefix}}<code>/{{.Prefix}}/</code>{{else}}<span class="muted small">{{$.T "common.default"}}</span>{{end}}</td>
+                <td>{{if .Prefix}}<code>/{{.Prefix}}</code>{{else}}<span class="muted small">{{$.T "common.default"}}</span>{{end}}</td>
                 <td><span class="hz-ellipsis" title="{{.Address}}">{{.Address}}</span></td>
                 <td>{{if .Enabled}}<span class="pill ok">{{$.T "common.enabled"}}</span>{{else}}<span class="pill">{{$.T "common.disabled"}}</span>{{end}}</td>
                 <td>
@@ -128,7 +128,11 @@
             <div class="field">
               <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">OPLIST_PUBLIC_URL</span></label>
               <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
-              <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
+              <div class="hint hint-line">
+                <span>{{.T "sakuya.oplist.publicUrlHint"}}</span>
+                <span class="spacer"></span>
+                <button class="btn hz-copy" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
+              </div>
             </div>
           {{end}}
         </div>
@@ -138,7 +142,11 @@
             <div class="field">
               <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">sakuya.instances[].publicUrl</span></label>
               <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
-              <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
+              <div class="hint hint-line">
+                <span>{{.T "sakuya.oplist.publicUrlHint"}}</span>
+                <span class="spacer"></span>
+                <button class="btn hz-copy" type="button" data-sakuya-copy-example style="padding:6px 10px; border-radius:999px;">{{.T "sakuya.oplist.copyExample"}}</button>
+              </div>
             </div>
             <div class="field">
               <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
