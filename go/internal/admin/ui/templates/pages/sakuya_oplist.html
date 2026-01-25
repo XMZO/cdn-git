@@ -14,6 +14,35 @@
       {{end}}
     </div>
 
+    <form class="form" method="post" action="/config/sakuya/oplist">
+      <input type="hidden" name="action" value="updateGlobal" />
+      <input type="hidden" name="returnInstance" value="{{.CurrentInstanceID}}" />
+
+      <div class="card">
+        <h3>{{.T "sakuya.globalLabel"}}</h3>
+        <div class="muted small">{{.T "sakuya.globalHint"}}</div>
+
+        <div class="grid cols-2" style="margin-top:12px;">
+          <div class="field">
+            <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+              <input type="checkbox" name="sakuyaEnabled" {{if .SakuyaEnabled}}checked{{end}} />
+              <input type="hidden" name="sakuyaEnabled" value="0" />
+              {{.T "common.enableService"}} <span class="key">sakuya.disabled</span>
+            </label>
+          </div>
+          <div class="field">
+            <label>{{.T "common.port"}} <span class="key">ports.sakuya</span></label>
+            <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" />
+            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn primary" type="submit">{{.T "common.save"}}</button>
+        </div>
+      </div>
+    </form>
+
     <div class="card">
       <h3>{{.T "sakuya.instances.title"}}</h3>
       <div class="muted small">{{.T "sakuya.instances.hint"}}</div>
@@ -90,37 +119,13 @@
       <input type="hidden" name="instanceID" value="{{.CurrentInstanceID}}" />
       <div class="card">
         <h3>{{.T "common.basicConfig"}}</h3>
-        <div class="field">
-          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
-            <input type="checkbox" name="sakuyaEnabled" {{if .SakuyaEnabled}}checked{{end}} />
-            <input type="hidden" name="sakuyaEnabled" value="0" />
-            {{.T "sakuya.globalLabel"}} <span class="key">sakuya.disabled</span>
-          </label>
-          <div class="hint">{{.T "sakuya.globalHint"}}</div>
-        </div>
         <div class="grid cols-2">
-          <div class="field">
-            <label>{{.T "common.port"}} <span class="key">ports.sakuya</span></label>
-            <input type="text" name="sakuyaPort" value="{{.SakuyaPortValue}}" placeholder="3200" />
-            <div class="hint">{{.T "common.modifiedPortRestart"}}</div>
-          </div>
           {{if ne .CurrentInstanceID ""}}
             <div class="field">
               <label>{{.T "sakuya.instances.prefixLabel"}} <span class="key">sakuya.instances[].prefix</span></label>
               <input type="text" name="oplistPrefix" value="{{.OplistPrefixValue}}" placeholder="op1" />
               <div class="hint">{{.T "sakuya.instances.prefixEditHint"}}</div>
             </div>
-          {{else}}
-            <div class="field">
-              <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">OPLIST_ADDRESS</span></label>
-              <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
-              <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
-            </div>
-          {{end}}
-        </div>
-
-        <div class="grid cols-2">
-          {{if ne .CurrentInstanceID ""}}
             <div class="field">
               <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">sakuya.instances[].address</span></label>
               <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
@@ -128,31 +133,20 @@
             </div>
           {{else}}
             <div class="field">
+              <label>{{.T "sakuya.oplist.addressLabel"}} <span class="key">OPLIST_ADDRESS</span></label>
+              <input type="text" name="oplistAddress" value="{{.OplistAddressValue}}" placeholder="https://op.example.com" />
+              <div class="hint">{{.T "sakuya.oplist.addressHint"}}</div>
+            </div>
+            <div class="field">
               <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">OPLIST_PUBLIC_URL</span></label>
               <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
               <div class="hint">{{.T "sakuya.oplist.publicUrlHint"}}</div>
             </div>
           {{end}}
-          <div class="field">
-            <label>{{.T "sakuya.oplist.tokenLabel"}} <span class="key">OPLIST_TOKEN</span></label>
-            <input id="oplistTokenInput" type="password" name="oplistToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderNotSet"}}{{end}}" />
-            <div class="hint hint-line">
-              <span>{{.T "sakuya.oplist.tokenHint"}}</span>
-              <span class="spacer"></span>
-              <label class="pill" style="font-weight:800;">
-                <input type="checkbox" data-toggle-password="#oplistTokenInput" />
-                {{.T "common.show"}}
-              </label>
-              <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
-                <input type="checkbox" name="clearOplistToken" />
-                {{.T "common.clear"}}
-              </label>
-            </div>
-          </div>
         </div>
 
-        <div class="grid cols-2">
-          {{if ne .CurrentInstanceID ""}}
+        {{if ne .CurrentInstanceID ""}}
+          <div class="grid cols-2">
             <div class="field">
               <label>{{.T "sakuya.oplist.publicUrlLabel"}} <span class="key">sakuya.instances[].publicUrl</span></label>
               <input type="text" name="oplistPublicUrl" value="{{.OplistPublicURLValue}}" placeholder="https://download.example.com" />
@@ -166,7 +160,24 @@
               </label>
               <div class="hint">{{.T "sakuya.instances.ignoreDupHint"}}</div>
             </div>
-          {{end}}
+          </div>
+        {{end}}
+
+        <div class="field">
+          <label>{{.T "sakuya.oplist.tokenLabel"}} <span class="key">OPLIST_TOKEN</span></label>
+          <input id="oplistTokenInput" type="password" name="oplistToken" value="" placeholder="{{if .TokenIsSet}}{{.T "secret.placeholderSetKeep"}}{{else}}{{.T "secret.placeholderNotSet"}}{{end}}" />
+          <div class="hint hint-line">
+            <span>{{.T "sakuya.oplist.tokenHint"}}</span>
+            <span class="spacer"></span>
+            <label class="pill" style="font-weight:800;">
+              <input type="checkbox" data-toggle-password="#oplistTokenInput" />
+              {{.T "common.show"}}
+            </label>
+            <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+              <input type="checkbox" name="clearOplistToken" />
+              {{.T "common.clear"}}
+            </label>
+          </div>
         </div>
 
         <div class="field">

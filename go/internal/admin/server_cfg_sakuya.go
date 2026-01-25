@@ -54,6 +54,46 @@ func (s *server) configSakuyaOplist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := strings.TrimSpace(r.FormValue("action"))
+	if action == "updateGlobal" {
+		returnInstance := strings.TrimSpace(r.FormValue("returnInstance"))
+
+		globalEnabledFallback := !cfg.Sakuya.Disabled
+		globalEnabled := parseBool(r.FormValue("sakuyaEnabled"), globalEnabledFallback)
+
+		portFallback := cfg.Ports.Sakuya
+		if portFallback == 0 {
+			portFallback = 3200
+		}
+		portRaw := strings.TrimSpace(r.FormValue("sakuyaPort"))
+		port, err := parsePort(portRaw, portFallback)
+		if err != nil {
+			s.renderSakuyaOplistForm(w, r, st, cfg, returnInstance, "", s.errText(r, err), portRaw, "", "", "", "", false)
+			return
+		}
+
+		userID := st.User.ID
+		err = s.config.Update(storage.UpdateRequest{
+			UserID: &userID,
+			Note:   "edit:sakuya:global",
+			Updater: func(cur model.AppConfig) (model.AppConfig, error) {
+				next := cur
+				next.Ports.Sakuya = port
+				next.Sakuya.Disabled = !globalEnabled
+				return next, nil
+			},
+		})
+		if err != nil {
+			s.renderSakuyaOplistForm(w, r, st, cfg, returnInstance, "", s.errText(r, err), portRaw, "", "", "", "", false)
+			return
+		}
+
+		if returnInstance != "" && !strings.EqualFold(returnInstance, "default") {
+			http.Redirect(w, r, "/config/sakuya/oplist?ok=1&instance="+url.QueryEscape(returnInstance), http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/config/sakuya/oplist?ok=1", http.StatusFound)
+		return
+	}
 	if action == "addInstance" {
 		prefix := strings.TrimSpace(r.FormValue("newInstancePrefix"))
 		prefix = strings.Trim(prefix, "/\\")
