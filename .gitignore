@@ -47,3 +47,4 @@ data/
 go/worker.txt
 go/od.txt
 go/server.js
+go/fileTools.js
