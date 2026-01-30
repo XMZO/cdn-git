@@ -168,6 +168,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	}
 
 	pathname := strings.TrimPrefix(r.URL.Path, "/")
+	pathname = strings.Trim(pathname, "/")
 	if pathname == "" || strings.HasPrefix(pathname, "_hazuki/") {
 		http.NotFound(w, r)
 		return
@@ -177,7 +178,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		return
 	}
 
-	upstreamURL := buildFileURL(runtime.Kind, runtime.Repo, runtime.Revision, pathname, r.URL.RawQuery)
+	upstreamURL := buildFileURL(runtime.Kind, runtime.Repo, runtime.Revision, pathname, sanitizeUpstreamQuery(r.URL.Query()))
 	if upstreamURL == "" {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
@@ -282,6 +283,7 @@ func buildFileURL(kind, repo, revision, filePath, rawQuery string) string {
 }
 
 func isSafeRelativePath(p string) bool {
+	p = strings.Trim(p, "/")
 	if strings.TrimSpace(p) == "" {
 		return false
 	}
@@ -291,9 +293,11 @@ func isSafeRelativePath(p string) bool {
 	if strings.Contains(p, "\x00") {
 		return false
 	}
-	if strings.Contains(p, "..") {
-		// Strict: reject any ".." to avoid escaping the repo/resolve path.
-		return false
+	for _, seg := range strings.Split(p, "/") {
+		switch seg {
+		case "", ".", "..":
+			return false
+		}
 	}
 	return true
 }
@@ -330,6 +334,10 @@ func shouldSkipUpstreamHeader(lowerKey string) bool {
 		"proxy-authorization",
 		"authorization",
 		"cookie",
+		"x-patchouli-key",
+		"x-forwarded-for",
+		"x-real-ip",
+		"cf-connecting-ip",
 		"te",
 		"trailer",
 		"transfer-encoding",
@@ -386,7 +394,7 @@ func doWithRedirects(client *http.Client, req *http.Request, runtime RuntimeConf
 		max = 10
 	}
 
-	baseHost := strings.ToLower(strings.TrimSpace(req.URL.Host))
+	baseOrigin := originKey(req.URL)
 	curReq := req
 	for i := 0; i <= max; i++ {
 		resp, err := client.Do(curReq)
@@ -419,13 +427,49 @@ func doWithRedirects(client *http.Client, req *http.Request, runtime RuntimeConf
 		nextReq.Header = cloneHeader(curReq.Header)
 		nextReq.Host = nextURL.Host
 
-		if h := strings.ToLower(strings.TrimSpace(nextURL.Host)); h != "" && h != baseHost {
+		if nextOrigin := originKey(nextURL); nextOrigin != "" && baseOrigin != "" && nextOrigin != baseOrigin {
 			nextReq.Header.Del("authorization")
 		}
 
 		curReq = nextReq
 	}
 	return nil, errors.New("too many redirects")
+}
+
+func originKey(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return ""
+	}
+	port := strings.TrimSpace(u.Port())
+	if port == "" {
+		switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		}
+	}
+	return host + ":" + port
+}
+
+func sanitizeUpstreamQuery(in url.Values) string {
+	if in == nil {
+		return ""
+	}
+	out := make(url.Values, len(in))
+	for k, vals := range in {
+		if vals == nil {
+			continue
+		}
+		cp := append([]string(nil), vals...)
+		out[k] = cp
+	}
+	out.Del("key")
+	return out.Encode()
 }
 
 func isRedirectStatus(code int) bool {
