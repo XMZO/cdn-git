@@ -196,6 +196,7 @@
     const torcherino = snapFrom(map.torcherino);
     const cdnjs = snapFrom(map.cdnjs);
     const sakuya = snapFrom(map.sakuya);
+    const patchouli = snapFrom(map.patchouli);
 
     let git = { bytesIn: 0, bytesOut: 0, requests: 0 };
     for (const [k, val] of Object.entries(map)) {
@@ -204,13 +205,14 @@
       }
     }
 
-    const total = sumSnaps(sumSnaps(sumSnaps(torcherino, cdnjs), git), sakuya);
+    const total = sumSnaps(sumSnaps(sumSnaps(sumSnaps(torcherino, cdnjs), git), sakuya), patchouli);
 
     return {
       torcherino,
       cdnjs,
       git,
       sakuya,
+      patchouli,
       total,
     };
   };

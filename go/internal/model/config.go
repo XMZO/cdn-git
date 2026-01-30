@@ -17,6 +17,7 @@ type AppConfig struct {
 	GitInstances []GitInstanceConfig `json:"gitInstances,omitempty"`
 	Torcherino   TorcherinoConfig    `json:"torcherino"`
 	Sakuya       SakuyaConfig        `json:"sakuya"`
+	Patchouli    PatchouliConfig     `json:"patchouli"`
 }
 
 type PortsConfig struct {
@@ -25,6 +26,7 @@ type PortsConfig struct {
 	Cdnjs      int `json:"cdnjs"`
 	Git        int `json:"git"`
 	Sakuya     int `json:"sakuya"`
+	Patchouli  int `json:"patchouli"`
 }
 
 type RedisConfig struct {
@@ -135,10 +137,37 @@ type SakuyaOplistInstance struct {
 	PublicURL string `json:"publicUrl,omitempty"`
 }
 
+type PatchouliConfig struct {
+	Disabled bool `json:"disabled,omitempty"`
+
+	// kind: "dataset" | "model" | "space"
+	Kind string `json:"kind,omitempty"`
+
+	// Repo in the form "username/repo".
+	Repo string `json:"repo"`
+
+	// Revision: branch/tag/commit. Defaults to "main".
+	Revision string `json:"revision,omitempty"`
+
+	// Token: HuggingFace access token (hf_...). Used as "Authorization: Bearer <token>".
+	Token string `json:"token"`
+
+	// Optional access key gate. If set, clients must provide it via query (?key=) or header (X-Patchouli-Key).
+	AccessKey string `json:"accessKey,omitempty"`
+
+	// When true, force "Cache-Control: no-store".
+	DisableCache bool `json:"disableCache,omitempty"`
+
+	// Optional list of allowed redirect host suffixes (e.g. ".huggingface.co").
+	AllowedRedirectHostSuffixes []string `json:"allowedRedirectHostSuffixes,omitempty"`
+}
+
 func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (string, bool)) (AppConfig, error) {
 	oplistAddr := strings.TrimSpace(getEnv("OPLIST_ADDRESS"))
 	oplistToken := strings.TrimSpace(getEnv("OPLIST_TOKEN"))
 	oplistEnabled := oplistAddr != "" && oplistToken != ""
+	patchRepo := strings.TrimSpace(getEnv("PATCHOULI_REPO"))
+	patchEnabled := patchRepo != ""
 
 	cfg := AppConfig{
 		Version: 1,
@@ -148,6 +177,7 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			Cdnjs:      3001,
 			Git:        3002,
 			Sakuya:     3200,
+			Patchouli:  3201,
 		},
 		Cdnjs: CdnjsConfig{
 			AssetURL:       strings.TrimSpace(defaultString(getEnv("ASSET_URL"), "https://cdn.jsdelivr.net")),
@@ -201,6 +231,16 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 				Token:     oplistToken,
 				PublicURL: strings.TrimSpace(getEnv("OPLIST_PUBLIC_URL")),
 			},
+		},
+		Patchouli: PatchouliConfig{
+			Disabled:                    !patchEnabled || parseBool(getEnv("PATCHOULI_DISABLED"), false),
+			Kind:                        strings.TrimSpace(defaultString(getEnv("PATCHOULI_KIND"), "dataset")),
+			Repo:                        patchRepo,
+			Revision:                    strings.TrimSpace(defaultString(getEnv("PATCHOULI_REVISION"), "main")),
+			Token:                       getEnv("PATCHOULI_TOKEN"),
+			AccessKey:                   getEnv("PATCHOULI_ACCESS_KEY"),
+			DisableCache:                parseBool(getEnv("PATCHOULI_DISABLE_CACHE"), true),
+			AllowedRedirectHostSuffixes: trimFilter(parseCSV(getEnv("PATCHOULI_ALLOWED_REDIRECT_HOST_SUFFIXES"))),
 		},
 	}
 
@@ -288,6 +328,10 @@ func (c AppConfig) Validate() error {
 	if c.Ports.Sakuya != 0 && (c.Ports.Sakuya < 1 || c.Ports.Sakuya > 65535) {
 		return fmt.Errorf("%s must be 1-65535", "ports.sakuya")
 	}
+	// Backward-compatibility: older configs won't have ports.patchouli yet.
+	if c.Ports.Patchouli != 0 && (c.Ports.Patchouli < 1 || c.Ports.Patchouli > 65535) {
+		return fmt.Errorf("%s must be 1-65535", "ports.patchouli")
+	}
 
 	// Prevent port conflicts among enabled services/instances.
 	usedPorts := map[int]string{
@@ -321,6 +365,7 @@ func (c AppConfig) Validate() error {
 		}
 	}
 	sakuyaEnabled := defaultOplistEnabled || anyInstanceEnabled
+	patchouliEnabled := !c.Patchouli.Disabled && strings.TrimSpace(c.Patchouli.Repo) != ""
 	if !c.Torcherino.Disabled {
 		if err := addPort(c.Ports.Torcherino, "torcherino"); err != nil {
 			return err
@@ -342,6 +387,15 @@ func (c AppConfig) Validate() error {
 			port = 3200
 		}
 		if err := addPort(port, "sakuya"); err != nil {
+			return err
+		}
+	}
+	if patchouliEnabled {
+		port := c.Ports.Patchouli
+		if port == 0 {
+			port = 3201
+		}
+		if err := addPort(port, "patchouli"); err != nil {
 			return err
 		}
 	}
@@ -504,6 +558,33 @@ func (c AppConfig) Validate() error {
 			}
 			if strings.TrimSpace(pu.Host) == "" {
 				return fmt.Errorf("sakuya.instances[%q].publicUrl host is empty", id)
+			}
+		}
+	}
+
+	if patchouliEnabled {
+		kind := strings.ToLower(strings.TrimSpace(c.Patchouli.Kind))
+		if kind == "" {
+			kind = "dataset"
+		}
+		switch kind {
+		case "dataset", "model", "space":
+			// ok
+		default:
+			return errors.New("patchouli.kind must be 'dataset', 'model' or 'space'")
+		}
+
+		if strings.TrimSpace(c.Patchouli.Repo) == "" {
+			return errors.New("patchouli.repo is required")
+		}
+
+		for _, suf := range c.Patchouli.AllowedRedirectHostSuffixes {
+			s := strings.TrimSpace(suf)
+			if s == "" {
+				return errors.New("patchouli.allowedRedirectHostSuffixes has empty entry")
+			}
+			if strings.Contains(s, "/") || strings.Contains(s, "\\") || strings.Contains(s, ":") {
+				return errors.New("patchouli.allowedRedirectHostSuffixes entries must be host suffixes (no scheme/path)")
 			}
 		}
 	}

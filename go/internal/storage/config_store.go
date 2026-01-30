@@ -240,6 +240,12 @@ func (s *ConfigStore) GetRedactedConfig() (model.AppConfig, error) {
 			cfg.Sakuya.Instances[i].Token = "__SET__"
 		}
 	}
+	if cfg.Patchouli.Token != "" {
+		cfg.Patchouli.Token = "__SET__"
+	}
+	if cfg.Patchouli.AccessKey != "" {
+		cfg.Patchouli.AccessKey = "__SET__"
+	}
 	if cfg.Torcherino.WorkerSecretHeaderMap != nil {
 		out := make(map[string]string, len(cfg.Torcherino.WorkerSecretHeaderMap))
 		for k, v := range cfg.Torcherino.WorkerSecretHeaderMap {
@@ -367,6 +373,13 @@ func (s *ConfigStore) Update(req UpdateRequest) error {
 					next.Sakuya.Instances[i].Token = tok
 				}
 			}
+		}
+
+		if _, ok := clearSet["patchouli.token"]; !ok && next.Patchouli.Token == "" {
+			next.Patchouli.Token = current.Patchouli.Token
+		}
+		if _, ok := clearSet["patchouli.accessKey"]; !ok && next.Patchouli.AccessKey == "" {
+			next.Patchouli.AccessKey = current.Patchouli.AccessKey
 		}
 	}
 
@@ -508,6 +521,22 @@ func encryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 			out.Sakuya.Instances[i].Token = enc
 		}
 
+		if out.Patchouli.Token != "" {
+			enc, err := crypto.EncryptString(out.Patchouli.Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Patchouli.Token = enc
+		}
+
+		if out.Patchouli.AccessKey != "" {
+			enc, err := crypto.EncryptString(out.Patchouli.AccessKey)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Patchouli.AccessKey = enc
+		}
+
 		if out.Torcherino.WorkerSecretHeaderMap != nil {
 			next := make(map[string]string, len(out.Torcherino.WorkerSecretHeaderMap))
 			for k, v := range out.Torcherino.WorkerSecretHeaderMap {
@@ -579,6 +608,22 @@ func decryptConfigSecrets(cfg model.AppConfig, crypto *CryptoContext) (model.App
 				return model.AppConfig{}, err
 			}
 			out.Sakuya.Instances[i].Token = dec
+		}
+
+		if out.Patchouli.Token != "" {
+			dec, err := crypto.DecryptString(out.Patchouli.Token)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Patchouli.Token = dec
+		}
+
+		if out.Patchouli.AccessKey != "" {
+			dec, err := crypto.DecryptString(out.Patchouli.AccessKey)
+			if err != nil {
+				return model.AppConfig{}, err
+			}
+			out.Patchouli.AccessKey = dec
 		}
 
 		if out.Torcherino.WorkerSecretHeaderMap != nil {

@@ -27,6 +27,7 @@ services:
       - "3001:3001" # cdnjs
       - "3002:3002" # git (default instance)
       - "3200:3200" # sakuya (oplist)
+      - "3201:3201" # patchouli (huggingface)
       # If you enable extra git instances, expose their ports too (example):
       # - "3004:3004" # git instance: gitInstances[0].port = 3004
     environment:

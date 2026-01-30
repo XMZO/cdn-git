@@ -98,6 +98,11 @@ func (s *server) healthSub(w http.ResponseWriter, r *http.Request) {
 		if port == 0 {
 			port = 3200
 		}
+	case "patchouli":
+		port = cfg.Ports.Patchouli
+		if port == 0 {
+			port = 3201
+		}
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
@@ -208,6 +213,8 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		hasSecret := strings.TrimSpace(cfg.Git.GithubToken) != "" ||
 			strings.TrimSpace(cfg.Torcherino.WorkerSecretKey) != "" ||
 			strings.TrimSpace(cfg.Sakuya.Oplist.Token) != "" ||
+			strings.TrimSpace(cfg.Patchouli.Token) != "" ||
+			strings.TrimSpace(cfg.Patchouli.AccessKey) != "" ||
 			len(cfg.Torcherino.WorkerSecretHeaderMap) > 0
 		if !hasSecret {
 			for _, it := range cfg.Sakuya.Instances {
@@ -262,6 +269,11 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		sakuyaPort = 3200
 	}
 	sakuyaURL := baseURLForPort(r, sakuyaPort)
+	patchouliPort := cfg.Ports.Patchouli
+	if patchouliPort == 0 {
+		patchouliPort = 3201
+	}
+	patchouliURL := baseURLForPort(r, patchouliPort)
 
 	gitInstances := []gitInstanceRow{}
 	if len(cfg.GitInstances) > 0 {
@@ -358,6 +370,15 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 				return checkServiceStatus(r.Context(), sakuyaPort)
 			}
 			return disabledServiceStatus(sakuyaPort)
+		}(),
+
+		PatchouliURL:       patchouliURL,
+		PatchouliHealthURL: "/_hazuki/health/patchouli",
+		PatchouliStatus: func() serviceStatus {
+			if cfg.Patchouli.Disabled || strings.TrimSpace(cfg.Patchouli.Repo) == "" {
+				return disabledServiceStatus(patchouliPort)
+			}
+			return checkServiceStatus(r.Context(), patchouliPort)
 		}(),
 
 		CdnjsRedis: redisSt,

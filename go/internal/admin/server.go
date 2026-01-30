@@ -86,6 +86,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/config/cdnjs", s.wrapRequireAuth(s.configCdnjs))
 	mux.HandleFunc("/config/torcherino", s.wrapRequireAuth(s.configTorcherino))
 	mux.HandleFunc("/config/sakuya/oplist", s.wrapRequireAuth(s.configSakuyaOplist))
+	mux.HandleFunc("/config/patchouli", s.wrapRequireAuth(s.configPatchouli))
 	// Backward-compatible alias: OneDrive page removed, keep old URL redirecting.
 	mux.HandleFunc("/config/sakuya/onedrive", s.wrapRequireAuth(s.configSakuyaOneDrive))
 	mux.HandleFunc("/config/versions", s.wrapRequireAuth(s.configVersions))

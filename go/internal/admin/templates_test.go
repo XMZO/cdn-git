@@ -170,6 +170,22 @@ func TestTemplatesRender(t *testing.T) {
 			},
 		},
 		{
+			name: "patchouli",
+			data: patchouliData{
+				layoutData:                     layoutData{Title: "Patchouli", BodyTemplate: "patchouli", User: adminUser, HasUsers: true},
+				Patchouli:                      model.PatchouliConfig{Kind: "dataset", Repo: "username/repo", Revision: "main", DisableCache: true},
+				PatchouliPortValue:             "3201",
+				PatchouliEnabled:               true,
+				TokenIsSet:                     true,
+				AccessKeyIsSet:                 true,
+				KindValue:                      "dataset",
+				AllowedRedirectHostSuffixesCsv: ".huggingface.co, .hf.co",
+				PatchouliBaseURL:               "http://127.0.0.1:3201",
+				PatchouliHealthURL:             "http://127.0.0.1:3201/_hazuki/health",
+				PatchouliStatus:                serviceStatus{Status: "disabled"},
+			},
+		},
+		{
 			name: "versions",
 			data: versionsData{
 				layoutData: layoutData{Title: "版本 & 备份", BodyTemplate: "versions", User: adminUser, HasUsers: true},

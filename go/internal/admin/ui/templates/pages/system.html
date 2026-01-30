@@ -175,6 +175,15 @@
             <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.SakuyaOplistStatus.Error}}</div>
           {{end}}
         </div>
+
+        <div class="card" style="padding:14px;">
+          <h3 style="margin:0 0 6px;">{{.T "nav.patchouli"}}</h3>
+          <div class="muted small">{{.T "common.port"}}：<code>{{.Ports.Patchouli}}</code></div>
+          <div style="margin-top:8px;">{{template "serviceStatusPill" (statusCtx $ .PatchouliStatus)}}</div>
+          {{if and (eq .PatchouliStatus.Status "error") .PatchouliStatus.Error}}
+            <div class="muted small" style="margin-top:8px;">{{.T "common.errorPrefix"}}：{{.PatchouliStatus.Error}}</div>
+          {{end}}
+        </div>
       </div>
     </div>
 

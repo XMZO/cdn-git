@@ -99,6 +99,9 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 	if ports.Sakuya == 0 {
 		ports.Sakuya = 3200
 	}
+	if ports.Patchouli == 0 {
+		ports.Patchouli = 3201
+	}
 
 	s.render(w, r, systemData{
 		layoutData: layoutData{
@@ -170,6 +173,16 @@ func (s *server) system(w http.ResponseWriter, r *http.Request) {
 				return checkServiceStatus(r.Context(), port)
 			}
 			return disabledServiceStatus(port)
+		}(),
+		PatchouliStatus: func() serviceStatus {
+			port := ports.Patchouli
+			if port == 0 {
+				port = 3201
+			}
+			if cfg.Patchouli.Disabled || strings.TrimSpace(cfg.Patchouli.Repo) == "" {
+				return disabledServiceStatus(port)
+			}
+			return checkServiceStatus(r.Context(), port)
 		}(),
 
 		Redis: checkRedisStatus(r.Context(), cfg.Cdnjs.Redis.Host, cfg.Cdnjs.Redis.Port),

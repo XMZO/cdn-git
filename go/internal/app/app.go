@@ -71,6 +71,7 @@ func Run(ctx context.Context) error {
 		adminModule{},
 		torcherinoModule{},
 		sakuyaModule{},
+		patchouliModule{},
 		gitModule{},
 		cdnjsModule{},
 	}

@@ -54,6 +54,10 @@ type dashboardData struct {
 	SakuyaHealthURL string
 	SakuyaStatus    serviceStatus
 
+	PatchouliURL       string
+	PatchouliHealthURL string
+	PatchouliStatus    serviceStatus
+
 	CdnjsRedis redisStatus
 
 	Warnings []string
@@ -174,6 +178,25 @@ type sakuyaInstanceRow struct {
 	ExampleURL string
 }
 
+type patchouliData struct {
+	layoutData
+	Patchouli model.PatchouliConfig
+
+	PatchouliPort      int
+	PatchouliPortValue string
+
+	PatchouliEnabled bool
+	TokenIsSet       bool
+	AccessKeyIsSet   bool
+
+	KindValue                      string
+	AllowedRedirectHostSuffixesCsv string
+
+	PatchouliBaseURL   string
+	PatchouliHealthURL string
+	PatchouliStatus    serviceStatus
+}
+
 type accountData struct {
 	layoutData
 }
@@ -217,6 +240,7 @@ type systemData struct {
 	CdnjsStatus        serviceStatus
 	GitStatus          serviceStatus
 	SakuyaOplistStatus serviceStatus
+	PatchouliStatus    serviceStatus
 
 	Redis redisStatus
 }
