@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -161,8 +162,11 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 type Handler struct {
 	getRuntime func() RuntimeConfig
 
-	apiClient      *http.Client
-	downloadClient *http.Client
+	apiClient        *http.Client
+	downloadClient   *http.Client
+	downloadClientH1 *http.Client
+
+	downloadHedgeDelay time.Duration
 
 	maxRedirects int
 
@@ -197,10 +201,12 @@ func NewHandler(opts HandlerOptions) *Handler {
 	}
 
 	return &Handler{
-		getRuntime:     getRuntime,
-		apiClient:      defaultAPIClient(opts.APIClient),
-		downloadClient: defaultDownloadClient(opts.DownloadClient),
-		maxRedirects:   defaultInt(opts.MaxRedirects, 10),
+		getRuntime:         getRuntime,
+		apiClient:          defaultAPIClient(opts.APIClient),
+		downloadClient:     defaultDownloadClient(opts.DownloadClient),
+		downloadClientH1:   defaultDownloadClientHTTP1(),
+		downloadHedgeDelay: 350 * time.Millisecond,
+		maxRedirects:       defaultInt(opts.MaxRedirects, 10),
 
 		linkTimeout:  defaultDuration(opts.LinkTimeout, 15*time.Second),
 		linkRetries:  defaultInt(opts.LinkRetries, 1),
@@ -626,7 +632,7 @@ func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, in
 
 	req := upReq
 	for i := 0; i <= h.maxRedirects; i++ {
-		resp, err := h.downloadClient.Do(req)
+		resp, err := h.doDownload(req)
 		if err != nil {
 			return nil, err
 		}
@@ -663,6 +669,194 @@ func (h *Handler) doWithRedirects(upReq *http.Request, runtime RuntimeConfig, in
 		req = nextReq
 	}
 	return nil, errors.New("too many redirects")
+}
+
+func (h *Handler) doDownload(req *http.Request) (*http.Response, error) {
+	if req == nil || req.URL == nil {
+		return nil, errors.New("bad gateway")
+	}
+
+	primary := h.downloadClient
+	secondary := h.downloadClientH1
+	forceH1 := shouldForceHTTP1(req.URL) && h.downloadClientH1 != nil
+	if forceH1 {
+		primary = h.downloadClientH1
+		secondary = h.downloadClientH1
+	}
+
+	// Moderate: only hedge/retry for known-flaky origins (e.g. 115).
+	hedgeDelay := time.Duration(0)
+	retries := 0
+	if forceH1 && h.downloadHedgeDelay > 0 {
+		hedgeDelay = h.downloadHedgeDelay
+		retries = 2
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= retries; attempt++ {
+		var resp *http.Response
+		var err error
+
+		if hedgeDelay > 0 && primary != nil && secondary != nil {
+			resp, err = h.doHedged(primary, secondary, req, hedgeDelay)
+		} else {
+			outReq, cloneErr := cloneOutgoingRequest(req)
+			if cloneErr != nil {
+				return nil, cloneErr
+			}
+			resp, err = primary.Do(outReq)
+			if err != nil && !forceH1 && primary != secondary && secondary != nil && shouldRetryWithHTTP1(req.URL, err) {
+				retryReq, retryErr := cloneOutgoingRequest(req)
+				if retryErr == nil {
+					resp, err = secondary.Do(retryReq)
+				}
+			}
+		}
+
+		if err == nil && resp != nil {
+			return resp, nil
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		lastErr = err
+
+		if attempt == retries {
+			break
+		}
+		if req.Context().Err() != nil {
+			return nil, req.Context().Err()
+		}
+		if !isRetryableDownloadError(err) {
+			break
+		}
+
+		// Short backoff to avoid immediate thundering herd; keep it small for video players.
+		backoff := time.Duration(150*(attempt+1)) * time.Millisecond
+		t := time.NewTimer(backoff)
+		select {
+		case <-req.Context().Done():
+			t.Stop()
+			return nil, req.Context().Err()
+		case <-t.C:
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("bad gateway")
+	}
+	return nil, lastErr
+}
+
+type hedgedResult struct {
+	idx  int
+	resp *http.Response
+	err  error
+}
+
+func (h *Handler) doHedged(primary *http.Client, secondary *http.Client, req *http.Request, delay time.Duration) (*http.Response, error) {
+	if req == nil || req.URL == nil {
+		return nil, errors.New("bad gateway")
+	}
+
+	ctx := req.Context()
+
+	ctx1, cancel1 := context.WithCancel(ctx)
+	ctx2, cancel2 := context.WithCancel(ctx)
+
+	r1, err := cloneOutgoingRequestWithContext(req, ctx1)
+	if err != nil {
+		cancel1()
+		cancel2()
+		return nil, err
+	}
+
+	ch := make(chan hedgedResult, 2)
+	go func() {
+		resp, err := primary.Do(r1)
+		ch <- hedgedResult{idx: 1, resp: resp, err: err}
+	}()
+
+	started2 := false
+	startSecond := func() error {
+		if started2 {
+			return nil
+		}
+		r2, err := cloneOutgoingRequestWithContext(req, ctx2)
+		if err != nil {
+			return err
+		}
+		started2 = true
+		go func() {
+			resp, err := secondary.Do(r2)
+			ch <- hedgedResult{idx: 2, resp: resp, err: err}
+		}()
+		return nil
+	}
+
+	timerCh := (<-chan time.Time)(nil)
+	var timer *time.Timer
+	if delay > 0 {
+		timer = time.NewTimer(delay)
+		timerCh = timer.C
+	} else {
+		_ = startSecond()
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
+
+	var firstErr error
+	for {
+		select {
+		case <-ctx.Done():
+			cancel1()
+			cancel2()
+			return nil, ctx.Err()
+		case <-timerCh:
+			_ = startSecond()
+			timerCh = nil
+		case res := <-ch:
+			if res.err == nil && res.resp != nil {
+				// Winner: cancel the other request.
+				if res.idx == 1 {
+					cancel2()
+				} else {
+					cancel1()
+				}
+				// Close the loser's response (if it arrives). This keeps connections from leaking.
+				if started2 {
+					go func() {
+						other := <-ch
+						if other.resp != nil {
+							_ = other.resp.Body.Close()
+						}
+					}()
+				}
+				return res.resp, nil
+			}
+			if res.resp != nil {
+				_ = res.resp.Body.Close()
+			}
+			if firstErr == nil && res.err != nil {
+				firstErr = res.err
+				_ = startSecond()
+				continue
+			}
+			cancel1()
+			cancel2()
+			if res.err != nil && firstErr != nil {
+				return nil, errors.New(firstErr.Error() + "; " + res.err.Error())
+			}
+			if res.err != nil {
+				return nil, res.err
+			}
+			if firstErr != nil {
+				return nil, firstErr
+			}
+			return nil, errors.New("bad gateway")
+		}
+	}
 }
 
 func resolveRedirect(base *url.URL, location string) (*url.URL, error) {
@@ -925,6 +1119,16 @@ func defaultDownloadClient(custom *http.Client) *http.Client {
 	}
 }
 
+func defaultDownloadClientHTTP1() *http.Client {
+	tr := defaultDownloadTransport()
+	return &http.Client{
+		Transport: tr,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 func defaultTransport() *http.Transport {
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -940,4 +1144,87 @@ func defaultTransport() *http.Transport {
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: 0,
 	}
+}
+
+func defaultDownloadTransport() *http.Transport {
+	tr := defaultTransport()
+	tr.ForceAttemptHTTP2 = false
+	tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	if tr.TLSClientConfig == nil {
+		tr.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
+	} else {
+		cfg := tr.TLSClientConfig.Clone()
+		cfg.NextProtos = []string{"http/1.1"}
+		tr.TLSClientConfig = cfg
+	}
+	return tr
+}
+
+func shouldForceHTTP1(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return false
+	}
+	return strings.HasSuffix(host, ".115cdn.net") || host == "115cdn.net"
+}
+
+func shouldRetryWithHTTP1(u *url.URL, err error) bool {
+	if err == nil {
+		return false
+	}
+	if shouldForceHTTP1(u) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "tls handshake timeout") ||
+		strings.Contains(msg, "handshake") ||
+		strings.Contains(msg, "http2") ||
+		strings.Contains(msg, "protocol error")
+}
+
+func cloneOutgoingRequest(req *http.Request) (*http.Request, error) {
+	return cloneOutgoingRequestWithContext(req, req.Context())
+}
+
+func cloneOutgoingRequestWithContext(req *http.Request, ctx context.Context) (*http.Request, error) {
+	if req == nil || req.URL == nil {
+		return nil, errors.New("bad gateway")
+	}
+	out, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	out.Header = req.Header.Clone()
+	out.Host = req.Host
+	return out, nil
+}
+
+func isRetryableDownloadError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var ne net.Error
+	if errors.As(err, &ne) {
+		if ne.Timeout() {
+			return true
+		}
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "timed out") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "eof") ||
+		strings.Contains(msg, "temporary")
 }
