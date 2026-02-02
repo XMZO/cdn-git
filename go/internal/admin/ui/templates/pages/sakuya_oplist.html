@@ -3,6 +3,7 @@
       <div class="card">
       <h2>{{.Title}} <span class="muted small">{{.T "sakuya.oplist.tagline"}}</span></h2>
       <div class="muted small">{{.T "sakuya.oplist.subtitle"}}</div>
+      <div class="muted small" style="margin-top:10px;">{{.T "sakuya.oplist.warning115Overseas"}}</div>
       <div class="btn-row" style="margin-top:10px;">
         <span class="pill">{{.T "sakuya.instances.current"}}：<code>{{if .CurrentInstanceID}}{{.CurrentInstanceID}}{{else}}default{{end}}</code>{{if .CurrentInstanceName}} · {{.CurrentInstanceName}}{{end}}</span>
         <span class="pill">{{.T "common.serviceUrl"}}：<code data-sakuya-base-url>{{.SakuyaBaseURL}}</code></span>

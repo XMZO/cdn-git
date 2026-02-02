@@ -100,6 +100,7 @@ func init() {
 
 		"sakuya.oplist.tagline":         "（OpenList 直链加速）",
 		"sakuya.oplist.subtitle":        "验证 sign 并调用 OpenList /api/fs/link 获取直链后转发下载；会按 Worker 行为处理 CORS/缓存头/重定向。",
+		"sakuya.oplist.warning115Overseas": "提示：如果 OpenList 挂载了 115，且 Hazuki 部署在中国大陆以外，115 缺少海外节点，直链在海外可能非常不稳定（如握手超时/502），不推荐用于 115 网盘。",
 		"sakuya.oplist.addressLabel":    "OpenList 地址",
 		"sakuya.oplist.addressHint":     "示例：https://op.example.com（建议不要带末尾 /）。",
 		"sakuya.oplist.publicUrlLabel":  "公网地址（可选）",
@@ -751,6 +752,7 @@ func init() {
 
 		"sakuya.oplist.tagline":         "OpenList link accelerator",
 		"sakuya.oplist.subtitle":        "Validates sign, calls OpenList /api/fs/link, then proxies the download with Worker-compatible CORS/cache/redirect behavior.",
+		"sakuya.oplist.warning115Overseas": "Tip: if OpenList mounts 115 and Hazuki is deployed outside Mainland China, 115 may be very unstable overseas (it lacks good overseas nodes; e.g. handshake timeouts/502). Not recommended for 115 drives.",
 		"sakuya.oplist.addressLabel":    "OpenList address",
 		"sakuya.oplist.addressHint":     "Example: https://op.example.com (no trailing slash).",
 		"sakuya.oplist.publicUrlLabel":  "Public URL (optional)",
