@@ -55,7 +55,7 @@ docker compose up -d --build
 - **cdnjs**：面向 `jsDelivr` 的缓存代理；Redis 可选但推荐；缓存 TTL 以文件后缀为主，可在面板配置默认值与覆盖表
 - **Git**：GitHub Raw 代理；支持 Token、CORS、Cache-Control 策略、替换规则；可在面板新增多实例（需要额外暴露端口）
 - **Sakuya（Oplist）**：对接 OpenList / Oplist 的直链加速
-  - 提示：如果 OpenList 挂载了 115，且 Hazuki 部署在中国大陆以外，115 缺少海外节点，直链在海外可能非常不稳定（如握手超时/502），不推荐用于 115 网盘。
+  > **注意**：如果 OpenList 挂载了 115，且 Hazuki 部署在中国大陆以外，115 缺少海外节点，直链在海外可能非常不稳定（如握手超时/502），不推荐用于 115 网盘。
 
 ## 配置与账号
 

@@ -930,6 +930,24 @@ table.table {
   color: var(--text);
 }
 
+.hz-callout {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  padding: 12px 14px;
+  line-height: 1.45;
+}
+
+.hz-callout.err {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.hz-callout .title {
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
 .segmented {
   display: inline-flex;
   gap: 6px;
