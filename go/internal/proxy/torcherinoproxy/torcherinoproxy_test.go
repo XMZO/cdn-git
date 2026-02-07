@@ -130,11 +130,10 @@ func TestTorcherinoForwardClientIP_DoesNotOverrideXForwardedFor(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if gotXRealIP != "9.8.7.6" {
-		t.Fatalf("expected X-Real-IP %q, got %q", "9.8.7.6", gotXRealIP)
+	if gotXRealIP != "11.11.11.11" {
+		t.Fatalf("expected X-Real-IP %q, got %q", "11.11.11.11", gotXRealIP)
 	}
 	if gotXForwardedFor != "11.11.11.11, 22.22.22.22" {
 		t.Fatalf("expected X-Forwarded-For to be preserved, got %q", gotXForwardedFor)
 	}
 }
-

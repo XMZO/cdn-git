@@ -337,14 +337,17 @@ func getClientIP(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
-		return cf
-	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		first := strings.TrimSpace(strings.Split(xff, ",")[0])
 		if ip := normalizeIP(first); ip != "" {
 			return ip
 		}
+	}
+	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
+		return cf
+	}
+	if xri := normalizeIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); xri != "" {
+		return xri
 	}
 	if ip := normalizeIP(strings.TrimSpace(r.RemoteAddr)); ip != "" {
 		return ip
