@@ -31,6 +31,8 @@ type RuntimeConfig struct {
 	WorkerSecretHeaders   []string
 	WorkerSecretHeaderMap map[string]string
 
+	ForwardClientIP bool
+
 	RedisCache RedisCacheRuntimeConfig
 }
 
@@ -84,6 +86,7 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 		WorkerSecretKey:       cfg.Torcherino.WorkerSecretKey,
 		WorkerSecretHeaders:   secretHeaders,
 		WorkerSecretHeaderMap: secretHeaderMap,
+		ForwardClientIP:       cfg.Torcherino.ForwardClientIP,
 
 		RedisCache: RedisCacheRuntimeConfig{
 			Enabled: cfg.Torcherino.RedisCache.Enabled,
@@ -146,6 +149,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 			"port":                      runtime.Port,
 			"defaultTargetSet":          strings.TrimSpace(runtime.DefaultTarget) != "",
 			"hostMappingCount":          len(runtime.HostMapping),
+			"forwardClientIp":           runtime.ForwardClientIP,
 			"workerSecretSet":           strings.TrimSpace(runtime.WorkerSecretKey) != "",
 			"workerSecretHeaders":       runtime.WorkerSecretHeaders,
 			"workerSecretHeaderMapKeys": keys,
@@ -239,6 +243,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		upReq.Header.Set(headerName, headerValue)
 	}
 
+	if runtime.ForwardClientIP {
+		if ip := getClientIP(r); ip != "" {
+			upReq.Header.Set("X-Real-IP", ip)
+			if strings.TrimSpace(upReq.Header.Get("X-Forwarded-For")) == "" {
+				upReq.Header.Set("X-Forwarded-For", ip)
+			}
+		}
+	}
+
 	resp, err := client.Do(upReq)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -318,6 +331,41 @@ func buildRequestOrigin(r *http.Request) string {
 		host = "localhost"
 	}
 	return proto + "://" + host
+}
+
+func getClientIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
+		return cf
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if ip := normalizeIP(first); ip != "" {
+			return ip
+		}
+	}
+	if ip := normalizeIP(strings.TrimSpace(r.RemoteAddr)); ip != "" {
+		return ip
+	}
+	return ""
+}
+
+func normalizeIP(value string) string {
+	s := strings.TrimSpace(value)
+	if s == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		s = h
+	}
+	s = strings.Trim(s, "[]")
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func normalizeHostOnly(hostport string) string {

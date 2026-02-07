@@ -48,6 +48,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	}
 
 	serviceEnabled := parseBool(r.FormValue("serviceEnabled"), !cfg.Torcherino.Disabled)
+	forwardClientIP := parseBool(r.FormValue("forwardClientIp"), cfg.Torcherino.ForwardClientIP)
 
 	defaultTarget := strings.TrimSpace(r.FormValue("defaultTarget"))
 	hostMappingRaw := r.FormValue("hostMappingJson")
@@ -55,6 +56,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.ForwardClientIP = forwardClientIP
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		s.renderTorcherinoForm(w, r, st, draft, "", "HOST_MAPPING: "+err.Error(), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"), parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
@@ -68,6 +70,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.ForwardClientIP = forwardClientIP
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), r.FormValue("workerSecretHeaderMapJson"), parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
@@ -80,6 +83,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		draft := cfg
 		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.ForwardClientIP = forwardClientIP
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		s.renderTorcherinoForm(w, r, st, draft, "", s.errText(r, err), r.FormValue("torcherinoPort"), defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, parseBool(r.FormValue("redisCacheEnabled"), cfg.Torcherino.RedisCache.Enabled), r.FormValue("redisCacheMaxBodyBytes"), r.FormValue("redisCacheDefaultTTLSeconds"), r.FormValue("redisCacheMaxTTLSeconds"))
@@ -101,6 +105,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		if err != nil || n < 0 || n > maxCacheBodyBytes {
 			draft := cfg
 			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.ForwardClientIP = forwardClientIP
 			draft.Torcherino.DefaultTarget = defaultTarget
 			draft.Torcherino.HostMapping = hostMapping
 			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheMaxBytesRange", maxCacheBodyBytes), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
@@ -115,6 +120,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		if err != nil || n < 0 || n > maxTTLSeconds {
 			draft := cfg
 			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.ForwardClientIP = forwardClientIP
 			draft.Torcherino.DefaultTarget = defaultTarget
 			draft.Torcherino.HostMapping = hostMapping
 			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheTTLRange", maxTTLSeconds), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
@@ -129,6 +135,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		if err != nil || n < 0 || n > maxTTLSeconds {
 			draft := cfg
 			draft.Torcherino.Disabled = !serviceEnabled
+			draft.Torcherino.ForwardClientIP = forwardClientIP
 			draft.Torcherino.DefaultTarget = defaultTarget
 			draft.Torcherino.HostMapping = hostMapping
 			s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheTTLRange", maxTTLSeconds), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
@@ -140,6 +147,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 	if maxTTLSecondsValue > 0 && defaultTTLSeconds > 0 && maxTTLSecondsValue < defaultTTLSeconds {
 		draft := cfg
 		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.ForwardClientIP = forwardClientIP
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		s.renderTorcherinoForm(w, r, st, draft, "", s.t(r, "error.torcherino.cacheMaxTTLTooSmall"), portRaw, defaultTarget, hostMappingRaw, r.FormValue("workerSecretHeaders"), secretHeaderMapRaw, redisCacheEnabled, maxBodyBytesRaw, defaultTTLRaw, maxTTLRaw)
@@ -177,6 +185,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 			next.Torcherino.DefaultTarget = defaultTarget
 			next.Torcherino.HostMapping = hostMapping
 			next.Torcherino.WorkerSecretHeaders = workerSecretHeaders
+			next.Torcherino.ForwardClientIP = forwardClientIP
 			next.Torcherino.RedisCache.Enabled = redisCacheEnabled
 			next.Torcherino.RedisCache.MaxBodyBytes = maxBodyBytes
 			next.Torcherino.RedisCache.DefaultTTLSeconds = defaultTTLSeconds
@@ -194,6 +203,7 @@ func (s *server) configTorcherino(w http.ResponseWriter, r *http.Request) {
 		draft := cfg
 		draft.Ports.Torcherino = port
 		draft.Torcherino.Disabled = !serviceEnabled
+		draft.Torcherino.ForwardClientIP = forwardClientIP
 		draft.Torcherino.DefaultTarget = defaultTarget
 		draft.Torcherino.HostMapping = hostMapping
 		draft.Torcherino.WorkerSecretHeaders = workerSecretHeaders

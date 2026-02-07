@@ -36,6 +36,14 @@
           </label>
           <div class="hint">{{.T "torcherino.serviceToggleHint"}}</div>
         </div>
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="forwardClientIp" {{if .Torcherino.ForwardClientIP}}checked{{end}} />
+            <input type="hidden" name="forwardClientIp" value="0" />
+            {{.T "torcherino.forwardClientIpLabel"}} <span class="key">torcherino.forwardClientIp</span>
+          </label>
+          <div class="hint">{{.T "torcherino.forwardClientIpHint"}}</div>
+        </div>
       </div>
 
       <details class="card accordion" open>
