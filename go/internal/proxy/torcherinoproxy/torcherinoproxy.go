@@ -245,6 +245,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 
 	if runtime.ForwardClientIP {
 		if ip := getClientIP(r); ip != "" {
+			upReq.Header.Set("X-Hazuki-Client-IP", ip)
 			upReq.Header.Set("X-Real-IP", ip)
 			if strings.TrimSpace(upReq.Header.Get("X-Forwarded-For")) == "" {
 				upReq.Header.Set("X-Forwarded-For", ip)
@@ -337,22 +338,24 @@ func getClientIP(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
+	cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip")))
+	remoteIP := normalizeIP(strings.TrimSpace(r.RemoteAddr))
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		first := strings.TrimSpace(strings.Split(xff, ",")[0])
 		if ip := normalizeIP(first); ip != "" {
+			if cf != "" && remoteIP != "" && ip == remoteIP {
+				return cf
+			}
 			return ip
 		}
 	}
-	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
+	if cf != "" {
 		return cf
 	}
 	if xri := normalizeIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); xri != "" {
 		return xri
 	}
-	if ip := normalizeIP(strings.TrimSpace(r.RemoteAddr)); ip != "" {
-		return ip
-	}
-	return ""
+	return remoteIP
 }
 
 func normalizeIP(value string) string {
