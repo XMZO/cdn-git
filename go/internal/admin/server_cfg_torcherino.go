@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -294,6 +295,8 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 		TorcherinoPort:      cfg.Ports.Torcherino,
 		TorcherinoPortValue: torcherinoPortValue,
 
+		TorcherinoClientInfo: buildTorcherinoClientInfo(r),
+
 		DefaultTargetValue: defaultTargetValue,
 		HostMappingJSON:    hostMappingJSONValue,
 
@@ -311,4 +314,61 @@ func (s *server) renderTorcherinoForm(w http.ResponseWriter, r *http.Request, st
 		TorcherinoHealthURL: "/_hazuki/health/torcherino",
 		TorcherinoStatus:    torcherinoSt,
 	})
+}
+
+func buildTorcherinoClientInfo(r *http.Request) torcherinoClientInfo {
+	if r == nil {
+		return torcherinoClientInfo{}
+	}
+	cf := normalizeAdminIP(r.Header.Get("Cf-Connecting-Ip"))
+	remote := normalizeAdminIP(r.RemoteAddr)
+	xReal := normalizeAdminIP(r.Header.Get("X-Real-IP"))
+	xHazuki := normalizeAdminIP(r.Header.Get("X-Hazuki-Client-IP"))
+	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+
+	clientIP := ""
+	if xff != "" {
+		first := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if ip := normalizeAdminIP(first); ip != "" {
+			if cf != "" && remote != "" && ip == remote {
+				clientIP = cf
+			} else {
+				clientIP = ip
+			}
+		}
+	}
+	if clientIP == "" && cf != "" {
+		clientIP = cf
+	}
+	if clientIP == "" && xReal != "" {
+		clientIP = xReal
+	}
+	if clientIP == "" {
+		clientIP = remote
+	}
+
+	return torcherinoClientInfo{
+		ClientIP:        clientIP,
+		RemoteAddr:      remote,
+		CfConnectingIP:  cf,
+		XForwardedFor:   xff,
+		XRealIP:         xReal,
+		XHazukiClientIP: xHazuki,
+	}
+}
+
+func normalizeAdminIP(value string) string {
+	s := strings.TrimSpace(value)
+	if s == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		s = h
+	}
+	s = strings.Trim(s, "[]")
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }

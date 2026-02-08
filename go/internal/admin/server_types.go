@@ -120,6 +120,8 @@ type torcherinoData struct {
 	TorcherinoPort      int
 	TorcherinoPortValue string
 
+	TorcherinoClientInfo torcherinoClientInfo
+
 	DefaultTargetValue string
 	HostMappingJSON    string
 
@@ -136,6 +138,15 @@ type torcherinoData struct {
 	TorcherinoBaseURL   string
 	TorcherinoHealthURL string
 	TorcherinoStatus    serviceStatus
+}
+
+type torcherinoClientInfo struct {
+	ClientIP        string
+	RemoteAddr      string
+	CfConnectingIP  string
+	XForwardedFor   string
+	XRealIP         string
+	XHazukiClientIP string
 }
 
 type sakuyaOplistData struct {

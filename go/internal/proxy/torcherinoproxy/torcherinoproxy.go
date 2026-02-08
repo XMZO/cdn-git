@@ -174,43 +174,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		return
 	}
 
-	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/debug/headers" {
-		if !isLocalRemoteAddr(r.RemoteAddr) && !isTrustedWorkerRequest(r, runtime) {
-			http.NotFound(w, r)
-			return
-		}
-
-		trustedHeaderIP := getTrustedClientIP(r, runtime)
-		payload := map[string]any{
-			"ok":      true,
-			"service": "torcherino",
-			"headers": map[string]any{
-				"cfConnectingIp":      r.Header.Get("Cf-Connecting-Ip"),
-				"xForwardedFor":       r.Header.Get("X-Forwarded-For"),
-				"xRealIp":             r.Header.Get("X-Real-IP"),
-				"xHazukiClientIp":     r.Header.Get("X-Hazuki-Client-IP"),
-				"trustedClientIp":     trustedHeaderIP,
-				"remoteAddr":          r.RemoteAddr,
-				"computedClientIp":    getClientIP(r),
-				"computedHazukiIp":    getHazukiClientIP(r, runtime),
-				"workerKeyPresent":    hasWorkerKeyHeader(r, runtime),
-				"workerSecretSet":     strings.TrimSpace(runtime.WorkerSecretKey) != "",
-				"forwardClientIpOn":   runtime.ForwardClientIP,
-				"trustCfConnectingIp": runtime.TrustCfConnectingIP,
-			},
-			"time": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-
-		buf, _ := json.MarshalIndent(payload, "", "  ")
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		if r.Method == http.MethodHead {
-			return
-		}
-		_, _ = w.Write(buf)
-		return
-	}
-
 	reqHost := normalizeHostOnly(r.Host)
 	targetHost := ""
 	if reqHost != "" {
@@ -381,16 +344,6 @@ func buildRequestOrigin(r *http.Request) string {
 	return proto + "://" + host
 }
 
-func isTrustedWorkerRequest(r *http.Request, runtime RuntimeConfig) bool {
-	if r == nil {
-		return false
-	}
-	if strings.TrimSpace(runtime.WorkerSecretKey) == "" {
-		return false
-	}
-	return hasWorkerKeyHeader(r, runtime)
-}
-
 func hasWorkerKeyHeader(r *http.Request, runtime RuntimeConfig) bool {
 	if r == nil {
 		return false
@@ -510,27 +463,6 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func isLocalRemoteAddr(remoteAddr string) bool {
-	host := strings.TrimSpace(remoteAddr)
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() || ip.IsPrivate() {
-		return true
-	}
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-	return false
 }
 
 func cloneRequestHeaders(src http.Header) http.Header {

@@ -13,6 +13,37 @@
       {{end}}
     </div>
 
+    <div class="card">
+      <h3>{{.T "torcherino.clientInfoTitle"}}</h3>
+      <div class="muted small">{{.T "torcherino.clientInfoHint"}}</div>
+      <div class="grid cols-2" style="margin-top:10px;">
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoClientIP"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.ClientIP}}" class="readonly" readonly />
+        </div>
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoCfIP"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.CfConnectingIP}}" class="readonly" readonly />
+        </div>
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoRemoteAddr"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.RemoteAddr}}" class="readonly" readonly />
+        </div>
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoXRealIP"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.XRealIP}}" class="readonly" readonly />
+        </div>
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoXForwardedFor"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.XForwardedFor}}" class="readonly" readonly />
+        </div>
+        <div class="field">
+          <label>{{.T "torcherino.clientInfoXHazukiIP"}}</label>
+          <input type="text" value="{{.TorcherinoClientInfo.XHazukiClientIP}}" class="readonly" readonly />
+        </div>
+      </div>
+    </div>
+
     <form class="form" method="post" action="/config/torcherino">
       <div class="card">
         <h3>{{.T "common.basicConfig"}}</h3>
