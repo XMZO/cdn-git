@@ -177,6 +177,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 			return
 		}
 
+		trustedHeaderIP := getTrustedClientIP(r, runtime)
 		payload := map[string]any{
 			"ok":      true,
 			"service": "torcherino",
@@ -185,9 +186,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 				"xForwardedFor":     r.Header.Get("X-Forwarded-For"),
 				"xRealIp":           r.Header.Get("X-Real-IP"),
 				"xHazukiClientIp":   r.Header.Get("X-Hazuki-Client-IP"),
+				"trustedClientIp":   trustedHeaderIP,
 				"remoteAddr":        r.RemoteAddr,
 				"computedClientIp":  getClientIP(r),
-				"computedHazukiIp":  getHazukiClientIP(r),
+				"computedHazukiIp":  getHazukiClientIP(r, runtime),
 				"workerKeyPresent":  hasWorkerKeyHeader(r, runtime),
 				"workerSecretSet":   strings.TrimSpace(runtime.WorkerSecretKey) != "",
 				"forwardClientIpOn": runtime.ForwardClientIP,
@@ -278,13 +280,18 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	}
 
 	if runtime.ForwardClientIP {
-		if ip := getHazukiClientIP(r); ip != "" {
+		trustedIP := getTrustedClientIP(r, runtime)
+		if ip := getHazukiClientIP(r, runtime); ip != "" {
 			upReq.Header.Set("X-Hazuki-Client-IP", ip)
 		}
-		if ip := getClientIP(r); ip != "" {
-			upReq.Header.Set("X-Real-IP", ip)
+		clientIP := getClientIP(r)
+		if trustedIP != "" {
+			clientIP = trustedIP
+		}
+		if clientIP != "" {
+			upReq.Header.Set("X-Real-IP", clientIP)
 			if strings.TrimSpace(upReq.Header.Get("X-Forwarded-For")) == "" {
-				upReq.Header.Set("X-Forwarded-For", ip)
+				upReq.Header.Set("X-Forwarded-For", clientIP)
 			}
 		}
 	}
@@ -399,14 +406,30 @@ func hasWorkerKeyHeader(r *http.Request, runtime RuntimeConfig) bool {
 	return false
 }
 
-func getHazukiClientIP(r *http.Request) string {
+func getHazukiClientIP(r *http.Request, runtime RuntimeConfig) string {
 	if r == nil {
 		return ""
+	}
+	if trusted := getTrustedClientIP(r, runtime); trusted != "" {
+		return trusted
 	}
 	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
 		return cf
 	}
 	return getClientIP(r)
+}
+
+func getTrustedClientIP(r *http.Request, runtime RuntimeConfig) string {
+	if r == nil {
+		return ""
+	}
+	if !hasWorkerKeyHeader(r, runtime) {
+		return ""
+	}
+	if ip := normalizeIP(strings.TrimSpace(r.Header.Get("X-Hazuki-Client-IP"))); ip != "" {
+		return ip
+	}
+	return ""
 }
 
 func getClientIP(r *http.Request) string {
