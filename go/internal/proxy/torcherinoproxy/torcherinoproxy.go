@@ -171,6 +171,40 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 		return
 	}
 
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/debug/headers" {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) && !isTrustedWorkerRequest(r, runtime) {
+			http.NotFound(w, r)
+			return
+		}
+
+		payload := map[string]any{
+			"ok":      true,
+			"service": "torcherino",
+			"headers": map[string]any{
+				"cfConnectingIp":    r.Header.Get("Cf-Connecting-Ip"),
+				"xForwardedFor":     r.Header.Get("X-Forwarded-For"),
+				"xRealIp":           r.Header.Get("X-Real-IP"),
+				"xHazukiClientIp":   r.Header.Get("X-Hazuki-Client-IP"),
+				"remoteAddr":        r.RemoteAddr,
+				"computedClientIp":  getClientIP(r),
+				"computedHazukiIp":  getHazukiClientIP(r),
+				"workerKeyPresent":  hasWorkerKeyHeader(r, runtime),
+				"workerSecretSet":   strings.TrimSpace(runtime.WorkerSecretKey) != "",
+				"forwardClientIpOn": runtime.ForwardClientIP,
+			},
+			"time": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+
+		buf, _ := json.MarshalIndent(payload, "", "  ")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write(buf)
+		return
+	}
+
 	reqHost := normalizeHostOnly(r.Host)
 	targetHost := ""
 	if reqHost != "" {
@@ -244,8 +278,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	}
 
 	if runtime.ForwardClientIP {
-		if ip := getClientIP(r); ip != "" {
+		if ip := getHazukiClientIP(r); ip != "" {
 			upReq.Header.Set("X-Hazuki-Client-IP", ip)
+		}
+		if ip := getClientIP(r); ip != "" {
 			upReq.Header.Set("X-Real-IP", ip)
 			if strings.TrimSpace(upReq.Header.Get("X-Forwarded-For")) == "" {
 				upReq.Header.Set("X-Forwarded-For", ip)
@@ -332,6 +368,45 @@ func buildRequestOrigin(r *http.Request) string {
 		host = "localhost"
 	}
 	return proto + "://" + host
+}
+
+func isTrustedWorkerRequest(r *http.Request, runtime RuntimeConfig) bool {
+	if r == nil {
+		return false
+	}
+	if strings.TrimSpace(runtime.WorkerSecretKey) == "" {
+		return false
+	}
+	return hasWorkerKeyHeader(r, runtime)
+}
+
+func hasWorkerKeyHeader(r *http.Request, runtime RuntimeConfig) bool {
+	if r == nil {
+		return false
+	}
+	headerNames := runtime.WorkerSecretHeaders
+	if len(headerNames) == 0 {
+		headerNames = []string{"x-forwarded-by-worker"}
+	}
+	for _, headerName := range headerNames {
+		if headerName == "" {
+			continue
+		}
+		if r.Header.Get(headerName) == runtime.WorkerSecretKey {
+			return true
+		}
+	}
+	return false
+}
+
+func getHazukiClientIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
+		return cf
+	}
+	return getClientIP(r)
 }
 
 func getClientIP(r *http.Request) string {

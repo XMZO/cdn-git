@@ -10,11 +10,13 @@ import (
 
 func TestTorcherinoForwardClientIP_Disabled(t *testing.T) {
 	var mu sync.Mutex
+	var gotXHazukiClientIP string
 	var gotXRealIP string
 	var gotXForwardedFor string
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+		gotXHazukiClientIP = r.Header.Get("X-Hazuki-Client-IP")
 		gotXRealIP = r.Header.Get("X-Real-IP")
 		gotXForwardedFor = r.Header.Get("X-Forwarded-For")
 		mu.Unlock()
@@ -30,7 +32,7 @@ func TestTorcherinoForwardClientIP_Disabled(t *testing.T) {
 	}
 
 	runtime := RuntimeConfig{
-		DefaultTarget: u.Host,
+		DefaultTarget:   u.Host,
 		ForwardClientIP: false,
 	}
 
@@ -43,6 +45,9 @@ func TestTorcherinoForwardClientIP_Disabled(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if gotXHazukiClientIP != "" {
+		t.Fatalf("expected X-Hazuki-Client-IP to be empty, got %q", gotXHazukiClientIP)
+	}
 	if gotXRealIP != "" {
 		t.Fatalf("expected X-Real-IP to be empty, got %q", gotXRealIP)
 	}
@@ -53,11 +58,13 @@ func TestTorcherinoForwardClientIP_Disabled(t *testing.T) {
 
 func TestTorcherinoForwardClientIP_InjectsHeaders(t *testing.T) {
 	var mu sync.Mutex
+	var gotXHazukiClientIP string
 	var gotXRealIP string
 	var gotXForwardedFor string
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+		gotXHazukiClientIP = r.Header.Get("X-Hazuki-Client-IP")
 		gotXRealIP = r.Header.Get("X-Real-IP")
 		gotXForwardedFor = r.Header.Get("X-Forwarded-For")
 		mu.Unlock()
@@ -86,6 +93,9 @@ func TestTorcherinoForwardClientIP_InjectsHeaders(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if gotXHazukiClientIP != "9.8.7.6" {
+		t.Fatalf("expected X-Hazuki-Client-IP %q, got %q", "9.8.7.6", gotXHazukiClientIP)
+	}
 	if gotXRealIP != "9.8.7.6" {
 		t.Fatalf("expected X-Real-IP %q, got %q", "9.8.7.6", gotXRealIP)
 	}
@@ -96,11 +106,13 @@ func TestTorcherinoForwardClientIP_InjectsHeaders(t *testing.T) {
 
 func TestTorcherinoForwardClientIP_DoesNotOverrideXForwardedFor(t *testing.T) {
 	var mu sync.Mutex
+	var gotXHazukiClientIP string
 	var gotXRealIP string
 	var gotXForwardedFor string
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+		gotXHazukiClientIP = r.Header.Get("X-Hazuki-Client-IP")
 		gotXRealIP = r.Header.Get("X-Real-IP")
 		gotXForwardedFor = r.Header.Get("X-Forwarded-For")
 		mu.Unlock()
@@ -130,6 +142,9 @@ func TestTorcherinoForwardClientIP_DoesNotOverrideXForwardedFor(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if gotXHazukiClientIP != "9.8.7.6" {
+		t.Fatalf("expected X-Hazuki-Client-IP %q, got %q", "9.8.7.6", gotXHazukiClientIP)
+	}
 	if gotXRealIP != "11.11.11.11" {
 		t.Fatalf("expected X-Real-IP %q, got %q", "11.11.11.11", gotXRealIP)
 	}
