@@ -172,7 +172,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 	}
 
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/_hazuki/debug/headers" {
-		if !isLoopbackRemoteAddr(r.RemoteAddr) && !isTrustedWorkerRequest(r, runtime) {
+		if !isLocalRemoteAddr(r.RemoteAddr) && !isTrustedWorkerRequest(r, runtime) {
 			http.NotFound(w, r)
 			return
 		}
@@ -479,6 +479,27 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func isLocalRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return true
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	return false
 }
 
 func cloneRequestHeaders(src http.Header) http.Header {
