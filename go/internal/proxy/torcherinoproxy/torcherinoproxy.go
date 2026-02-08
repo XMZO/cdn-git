@@ -31,7 +31,8 @@ type RuntimeConfig struct {
 	WorkerSecretHeaders   []string
 	WorkerSecretHeaderMap map[string]string
 
-	ForwardClientIP bool
+	ForwardClientIP     bool
+	TrustCfConnectingIP bool
 
 	RedisCache RedisCacheRuntimeConfig
 }
@@ -87,6 +88,7 @@ func BuildRuntimeConfig(cfg model.AppConfig) (RuntimeConfig, error) {
 		WorkerSecretHeaders:   secretHeaders,
 		WorkerSecretHeaderMap: secretHeaderMap,
 		ForwardClientIP:       cfg.Torcherino.ForwardClientIP,
+		TrustCfConnectingIP:   cfg.Torcherino.TrustCfConnectingIP,
 
 		RedisCache: RedisCacheRuntimeConfig{
 			Enabled: cfg.Torcherino.RedisCache.Enabled,
@@ -150,6 +152,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 			"defaultTargetSet":          strings.TrimSpace(runtime.DefaultTarget) != "",
 			"hostMappingCount":          len(runtime.HostMapping),
 			"forwardClientIp":           runtime.ForwardClientIP,
+			"trustCfConnectingIp":       runtime.TrustCfConnectingIP,
 			"workerSecretSet":           strings.TrimSpace(runtime.WorkerSecretKey) != "",
 			"workerSecretHeaders":       runtime.WorkerSecretHeaders,
 			"workerSecretHeaderMapKeys": keys,
@@ -182,17 +185,18 @@ func handleRequest(w http.ResponseWriter, r *http.Request, runtime RuntimeConfig
 			"ok":      true,
 			"service": "torcherino",
 			"headers": map[string]any{
-				"cfConnectingIp":    r.Header.Get("Cf-Connecting-Ip"),
-				"xForwardedFor":     r.Header.Get("X-Forwarded-For"),
-				"xRealIp":           r.Header.Get("X-Real-IP"),
-				"xHazukiClientIp":   r.Header.Get("X-Hazuki-Client-IP"),
-				"trustedClientIp":   trustedHeaderIP,
-				"remoteAddr":        r.RemoteAddr,
-				"computedClientIp":  getClientIP(r),
-				"computedHazukiIp":  getHazukiClientIP(r, runtime),
-				"workerKeyPresent":  hasWorkerKeyHeader(r, runtime),
-				"workerSecretSet":   strings.TrimSpace(runtime.WorkerSecretKey) != "",
-				"forwardClientIpOn": runtime.ForwardClientIP,
+				"cfConnectingIp":      r.Header.Get("Cf-Connecting-Ip"),
+				"xForwardedFor":       r.Header.Get("X-Forwarded-For"),
+				"xRealIp":             r.Header.Get("X-Real-IP"),
+				"xHazukiClientIp":     r.Header.Get("X-Hazuki-Client-IP"),
+				"trustedClientIp":     trustedHeaderIP,
+				"remoteAddr":          r.RemoteAddr,
+				"computedClientIp":    getClientIP(r),
+				"computedHazukiIp":    getHazukiClientIP(r, runtime),
+				"workerKeyPresent":    hasWorkerKeyHeader(r, runtime),
+				"workerSecretSet":     strings.TrimSpace(runtime.WorkerSecretKey) != "",
+				"forwardClientIpOn":   runtime.ForwardClientIP,
+				"trustCfConnectingIp": runtime.TrustCfConnectingIP,
 			},
 			"time": time.Now().UTC().Format(time.RFC3339Nano),
 		}
@@ -423,11 +427,15 @@ func getTrustedClientIP(r *http.Request, runtime RuntimeConfig) string {
 	if r == nil {
 		return ""
 	}
-	if !hasWorkerKeyHeader(r, runtime) {
-		return ""
+	if hasWorkerKeyHeader(r, runtime) {
+		if ip := normalizeIP(strings.TrimSpace(r.Header.Get("X-Hazuki-Client-IP"))); ip != "" {
+			return ip
+		}
 	}
-	if ip := normalizeIP(strings.TrimSpace(r.Header.Get("X-Hazuki-Client-IP"))); ip != "" {
-		return ip
+	if runtime.TrustCfConnectingIP {
+		if cf := normalizeIP(strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip"))); cf != "" {
+			return cf
+		}
 	}
 	return ""
 }

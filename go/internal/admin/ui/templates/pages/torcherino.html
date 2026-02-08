@@ -44,6 +44,14 @@
           </label>
           <div class="hint">{{.T "torcherino.forwardClientIpHint"}}</div>
         </div>
+        <div class="field">
+          <label style="display:flex; gap:10px; align-items:center; font-weight:900;">
+            <input type="checkbox" name="trustCfConnectingIp" {{if .Torcherino.TrustCfConnectingIP}}checked{{end}} />
+            <input type="hidden" name="trustCfConnectingIp" value="0" />
+            {{.T "torcherino.trustCfConnectingIpLabel"}} <span class="key">torcherino.trustCfConnectingIp</span>
+          </label>
+          <div class="hint">{{.T "torcherino.trustCfConnectingIpHint"}}</div>
+        </div>
       </div>
 
       <details class="card accordion" open>

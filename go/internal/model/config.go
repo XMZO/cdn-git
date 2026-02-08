@@ -86,6 +86,7 @@ type TorcherinoConfig struct {
 	WorkerSecretHeaders   []string                   `json:"workerSecretHeaders"`
 	WorkerSecretHeaderMap map[string]string          `json:"workerSecretHeaderMap"`
 	ForwardClientIP       bool                       `json:"forwardClientIp,omitempty"`
+	TrustCfConnectingIP   bool                       `json:"trustCfConnectingIp,omitempty"`
 	RedisCache            TorcherinoRedisCacheConfig `json:"redisCache,omitempty"`
 }
 
@@ -224,6 +225,7 @@ func DefaultConfigFromEnv(getEnv func(string) string, lookupEnv func(string) (st
 			WorkerSecretHeaders:   parseHeaderNamesCSV(getEnv("WORKER_SECRET_HEADERS")),
 			WorkerSecretHeaderMap: map[string]string{},
 			ForwardClientIP:       parseBool(getEnv("TORCHERINO_FORWARD_CLIENT_IP"), false),
+			TrustCfConnectingIP:   parseBool(getEnv("TORCHERINO_TRUST_CF_CONNECTING_IP"), false),
 		},
 		Sakuya: SakuyaConfig{
 			Disabled: false,
